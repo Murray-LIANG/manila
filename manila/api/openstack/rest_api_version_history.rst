@@ -305,3 +305,7 @@ user documentation.
 2.55 (Maximum in Ussuri)
 ------------------------
   Share groups feature is no longer considered experimental.
+
+2.56
+----
+  Added share group replication.

@@ -196,7 +196,8 @@ class Share(BASE, ManilaBase):
     __tablename__ = 'shares'
     _extra_keys = ['name', 'export_location', 'export_locations', 'status',
                    'host', 'share_server_id', 'share_network_id',
-                   'availability_zone', 'access_rules_status', 'share_type_id']
+                   'availability_zone', 'access_rules_status', 'share_type_id',
+                   'share_group_instance_id']
 
     @property
     def name(self):
@@ -235,7 +236,8 @@ class Share(BASE, ManilaBase):
     def __getattr__(self, item):
         proxified_properties = ('status', 'host', 'share_server_id',
                                 'share_network_id', 'availability_zone',
-                                'share_type_id', 'share_type')
+                                'share_type_id', 'share_type',
+                                'share_group_instance_id')
 
         if item in proxified_properties:
             return getattr(self.instance, item, None)
@@ -315,9 +317,6 @@ class Share(BASE, ManilaBase):
     mount_snapshot_support = Column(Boolean, default=False)
     share_proto = Column(String(255))
     is_public = Column(Boolean, default=False)
-    share_group_id = Column(String(36),
-                            ForeignKey('share_groups.id'),
-                            nullable=True)
 
     source_share_group_snapshot_member_id = Column(String(36), nullable=True)
     task_state = Column(String(255))
@@ -342,7 +341,7 @@ class ShareInstance(BASE, ManilaBase):
     _proxified_properties = ('user_id', 'project_id', 'size',
                              'display_name', 'display_description',
                              'snapshot_id', 'share_proto', 'is_public',
-                             'share_group_id', 'replication_type',
+                             'replication_type',
                              'source_share_group_snapshot_member_id',
                              'mount_snapshot_support')
 
@@ -368,6 +367,9 @@ class ShareInstance(BASE, ManilaBase):
     share_id = Column(String(36), ForeignKey('shares.id'))
     deleted = Column(String(36), default='False')
     host = Column(String(255))
+    share_group_instance_id = Column(String(36),
+                                     ForeignKey('share_group_instances.id'),
+                                     nullable=True)
     status = Column(String(255))
     progress = Column(String(32))
 
@@ -1033,10 +1035,10 @@ class ShareServer(BASE, ManilaBase):
                     'ShareServer.id == ShareInstance.share_server_id,'
                     'ShareInstance.deleted == "False")')
 
-    share_groups = orm.relationship(
-        "ShareGroup", backref='share_server', primaryjoin='and_('
-        'ShareServer.id == ShareGroup.share_server_id,'
-        'ShareGroup.deleted == "False")')
+    share_group_instances = orm.relationship(
+        "ShareGroupInstance", backref='share_server', primaryjoin='and_('
+        'ShareServer.id == ShareGroupInstance.share_server_id,'
+        'ShareGroupInstance.deleted == "False")')
 
     _backend_details = orm.relationship(
         "ShareServerBackendDetails",
@@ -1130,34 +1132,113 @@ class ShareGroupTypes(BASE, ManilaBase):
 class ShareGroup(BASE, ManilaBase):
     """Represents a share group."""
     __tablename__ = 'share_groups'
-    _extra_keys = [
-        'availability_zone',
-    ]
+    _extra_keys = ['status', 'host', 'share_server_id', 'share_network_id',
+                   'availability_zone', 'share_group_type_id',
+                   'share_group_type']
+
+    def __getattr__(self, item):
+        proxified_properties = ('status', 'host', 'share_server_id',
+                                'share_network_id', 'availability_zone',
+                                'share_group_type_id', 'share_group_type')
+
+        if item in proxified_properties:
+            return getattr(self.instance, item, None)
+
+        raise AttributeError(item)
+
     id = Column(String(36), primary_key=True)
     user_id = Column(String(255), nullable=False)
     project_id = Column(String(255), nullable=False)
     deleted = Column(String(36), default='False')
-    host = Column(String(255))
     name = Column(String(255))
     description = Column(String(255))
-    status = Column(String(255))
     source_share_group_snapshot_id = Column(String(36))
+    consistent_snapshot_support = Column(Enum('pool', 'host'), default=None)
+    group_replication_type = Column(String(255), nullable=True)
+
+    instances = orm.relationship(
+        'ShareGroupInstance',
+        lazy='immediate',
+        primaryjoin=(
+            'and_('
+            'ShareGroup.id == ShareGroupInstance.share_group_id, '
+            'ShareGroupInstance.deleted == "False")'
+        ),
+        viewonly=True,
+        join_depth=2,
+    )
+
+    @property
+    def instance(self):
+        if len(self.instances) == 0:
+            return None
+
+        order = (constants.STATUS_REVERTING,
+                 constants.STATUS_REPLICATION_CHANGE,
+                 constants.STATUS_MIGRATING,
+                 constants.STATUS_AVAILABLE,
+                 constants.STATUS_ERROR)
+        other_statuses = tuple(
+            x['status'] for x in self.instances
+            if x['status'] not in order + constants.TRANSITIONAL_STATUSES
+        )
+        order = order + other_statuses + constants.TRANSITIONAL_STATUSES
+        sorted_instances = sorted(self.instances,
+                                  key=lambda x: order.index(x['status']))
+
+        selected = sorted_instances
+        if selected[0]['status'] != constants.STATUS_REPLICATION_CHANGE:
+            selected = list(
+                filter(lambda x:
+                       x['replica_state'] == constants.REPLICA_STATE_ACTIVE,
+                       sorted_instances)
+            ) or sorted_instances
+        return selected[0]
+
+    @property
+    def has_replicas(self):
+        if len(self.instances) <= 1:
+            return False
+
+        replicas = list(
+            filter(lambda x: x['replica_state'] is not None, self.instances))
+        return len(replicas) > 1
+
+
+class ShareGroupInstance(BASE, ManilaBase):
+    """Represents a share group instance."""
+    __tablename__ = 'share_group_instances'
+    _extra_keys = ['availability_zone']
+
+    _proxified_properties = ['user_id', 'project_id', 'name', 'description',
+                             'source_share_group_snapshot_id',
+                             'consistent_snapshot_support']
+
+    def set_share_group_data(self, share_group):
+        for sg_property in self._proxified_properties:
+            setattr(self, sg_property, share_group[sg_property])
+
+    id = Column(String(36), primary_key=True)
+    availability_zone_id = Column(
+        String(36), ForeignKey('availability_zones.id'), nullable=True)
+    deleted = Column(String(36), default='False')
+    host = Column(String(255))
+    replica_state = Column(String(255), nullable=True)
+    share_group_id = Column(String(36), ForeignKey('share_groups.id'))
+    share_group_type_id = Column(
+        String(36), ForeignKey('share_group_types.id'), nullable=True)
     share_network_id = Column(
         String(36), ForeignKey('share_networks.id'), nullable=True)
     share_server_id = Column(
         String(36), ForeignKey('share_servers.id'), nullable=True)
-    share_group_type_id = Column(
-        String(36), ForeignKey('share_group_types.id'), nullable=True)
-    availability_zone_id = Column(
-        String(36), ForeignKey('availability_zones.id'), nullable=True)
-    consistent_snapshot_support = Column(Enum('pool', 'host'), default=None)
+    status = Column(String(255))
 
     share_group_type = orm.relationship(
         ShareGroupTypes,
-        backref="share_groups",
+        backref="share_group_instance",
         foreign_keys=share_group_type_id,
         primaryjoin="and_("
-                    "ShareGroup.share_group_type_id =="
+                    "ShareGroupInstance.share_group_type_id =="
                     "ShareGroupTypes.id,"
                     "ShareGroup.deleted == 'False')")
     _availability_zone = orm.relationship(
@@ -1166,7 +1247,7 @@ class ShareGroup(BASE, ManilaBase):
         foreign_keys=availability_zone_id,
         primaryjoin=(
             "and_("
-            "ShareGroup.availability_zone_id == AvailabilityZone.id, "
+            "ShareGroupInstance.availability_zone_id == AvailabilityZone.id, "
             "AvailabilityZone.deleted == 'False')"))
 
     @property

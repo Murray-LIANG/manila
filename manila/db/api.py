@@ -1198,6 +1198,81 @@ def count_share_groups_in_share_network(context, share_network_id,
     return IMPL.count_share_groups_in_share_network(context, share_network_id)
 
 
+def share_group_instance_get(context, share_group_instance_id,
+                             with_share_group_data=False):
+    """Gets the share group instance by id."""
+    return IMPL.share_group_instance_get(
+        context, share_group_instance_id,
+        with_share_group_data=with_share_group_data)
+
+
+def share_group_instance_get_all(context, filters=None):
+    """Returns all share group instances."""
+    return IMPL.share_group_instance_get_all(context, filters=filters)
+
+
+def share_group_instance_create(context, share_group_id, values):
+    """Creates a share group instance."""
+    return IMPL.share_group_instance_create(context, share_group_id, values)
+
+
+def share_group_instance_update(context, share_group_instance_id, values,
+                                with_share_group_data=False):
+    """Updates a share group instance."""
+    return IMPL.share_group_instance_update(
+        context, share_group_instance_id, values,
+        with_share_group_data=with_share_group_data)
+
+
+def share_group_instance_delete(context, share_group_instance_id):
+    """Deletes a share group instance."""
+    return IMPL.share_group_instance_delete(context, share_group_instance_id)
+
+
+def share_group_replica_get(context, share_group_replica_id,
+                            with_share_group_data=False,
+                            with_share_server=False):
+    return IMPL.share_group_replica_get(
+        context, share_group_replica_id,
+        with_share_group_data=with_share_group_data,
+        with_share_server=with_share_server)
+
+
+def share_group_replica_get_all(context,
+                                with_share_group_data=False,
+                                with_share_server=False):
+    return IMPL.share_group_replica_get_all(
+        context, with_share_group_data=with_share_group_data,
+        with_share_server=with_share_server)
+
+
+def share_group_replica_get_all_by_share_group(context, share_group_id,
+                                               with_share_group_data=False,
+                                               with_share_server=False):
+    return IMPL.share_group_replica_get_all_by_share_group(
+        context, share_group_id, with_share_group_data=with_share_group_data,
+        with_share_server=with_share_server)
+
+
+def share_group_replica_get_available_active_replica(
+        context, share_group_id, with_share_group_data=False,
+        with_share_server=False):
+    return IMPL.share_group_replica_get_available_active_replica(
+        context, share_group_id, with_share_group_data=with_share_group_data,
+        with_share_server=with_share_server)
+
+
+def share_group_replica_update(context, share_group_replica_id, values,
+                               with_share_group_data=False):
+    return IMPL.share_group_replica_update(
+        context, share_group_replica_id, values,
+        with_share_group_data=with_share_group_data)
+
+
+def share_group_replica_delete(context, share_group_replica_id):
+    return IMPL.share_group_replica_delete(context, share_group_replica_id)
+
+
 def count_share_group_snapshot_members_in_share(context, share_id,
                                                 session=None):
     """Returns the number of group snapshot members linked to the share."""

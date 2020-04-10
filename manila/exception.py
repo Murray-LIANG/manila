@@ -914,6 +914,16 @@ class InvalidShareGroupSnapshot(Invalid):
     message = _("Invalid share group snapshot: %(reason)s")
 
 
+class ShareGroupInstanceNotFound(NotFound):
+    message = _("Share group instance %(share_group_instance_id)s could not "
+                "be found.")
+
+
+class ShareGroupReplicaNotFound(NotFound):
+    message = _("Share group replica %(share_group_replica_id)s could not "
+                "be found.")
+
+
 class DriverNotInitialized(ManilaException):
     message = _("Share driver '%(driver)s' not initialized.")
 
