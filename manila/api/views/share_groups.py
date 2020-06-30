@@ -22,6 +22,7 @@ class ShareGroupViewBuilder(common.ViewBuilder):
     _collection_name = 'share_groups'
     _detail_version_modifiers = [
         "add_consistent_snapshot_support_and_az_id_fields_to_sg",
+        "add_share_group_replication_fields",
     ]
 
     def summary_list(self, request, share_groups):
@@ -74,6 +75,11 @@ class ShareGroupViewBuilder(common.ViewBuilder):
         sg_dict['availability_zone'] = sg.get('availability_zone')
         sg_dict['consistent_snapshot_support'] = sg.get(
             'consistent_snapshot_support')
+
+    @common.ViewBuilder.versioned_method("2.56")
+    def add_share_group_replication_fields(self, context, sg_dict, sg):
+        sg_dict['group_replication_type'] = sg.get('group_replication_type')
+        sg_dict['has_replicas'] = sg.get('has_replicas')
 
     def _list_view(self, func, request, shares):
         """Provide a view for a list of share groups."""

@@ -21,6 +21,7 @@ from oslo_config import cfg
 from oslo_log import log
 from oslo_utils import excutils
 from oslo_utils import strutils
+from oslo_utils import timeutils
 import six
 
 from manila.common import constants
@@ -172,26 +173,57 @@ class API(base.Base):
             payload['stypes'] += type_name + '(ID: %s)' % type_id
             raise exception.InvalidInput(reason=msg % payload)
 
+        share_replication_type_dict = {
+            '{name}(ID: {id})'.format(name=st['name'], id=st['id']):
+                st.get('extra_specs', {}).get('replication_type', None)
+            for st in share_types_of_new_group}
+        share_replication_types = set(share_replication_type_dict.values())
+        if len(share_replication_types) > 1:
+            # NOTE(RyanLiang): It changes the behavior. The mixed
+            # replication_type of share types in a group will fail the group
+            # creation by this change.
+            msg = _("The share types of the new group cannot have conflict "
+                    "replication_type extra spec. The detail of "
+                    "replication_type supported by each share type: %s.")
+            raise exception.InvalidInput(
+                reason=msg % share_replication_type_dict)
+
+        share_replication_type = None
+        if share_replication_types:
+            share_replication_type = list(share_replication_types)[0]
+
+        group_replication_type = share_group_type.get(
+            'group_specs', {}).get('group_replication_type', None)
+
+        # NOTE(RyanLiang): It's meaningless to have different values for
+        # share_replication_type and group_replication_type. For example,
+        # in the case share_replication_type=dr and
+        # group_replication_type=readable, the user cannot create share
+        # replicas but share group replicas. And the default implementation of
+        # create_share_group_replica of share driver is creating share replicas
+        # in the group one by one. It is reasonable to keep
+        # share_replication_type and group_replication_type the same for the
+        # the default implementation of create_share_group_replica.
+        # The case of share_replication_type=None but
+        # group_replication_type is not None is valid for any share driver
+        # which only supports share group replications but share replications.
+        if (all((share_replication_type, group_replication_type))
+                and share_replication_type != group_replication_type):
+            msg = _("The share replication type %(share_rep)s supported by "
+                    "share types of the new group cannot be conflict with "
+                    "the group spec group_replication_type %(group_rep)s.")
+            raise exception.InvalidInput(
+                reason=msg % {'share_rep': share_replication_type,
+                              'group_rep': group_replication_type})
+
+        deltas = {'share_groups': 1}
+        if group_replication_type:
+            deltas['share_group_replicas'] = 1
+
         try:
-            reservations = QUOTAS.reserve(context, share_groups=1)
+            reservations = QUOTAS.reserve(context, **deltas)
         except exception.OverQuota as e:
-            overs = e.kwargs['overs']
-            usages = e.kwargs['usages']
-            quotas = e.kwargs['quotas']
-
-            def _consumed(name):
-                return (usages[name]['reserved'] + usages[name]['in_use'])
-
-            if 'share_groups' in overs:
-                msg = ("Quota exceeded for '%(s_uid)s' user in '%(s_pid)s' "
-                       "project. (%(d_consumed)d of "
-                       "%(d_quota)d already consumed).")
-                LOG.warning(msg, {
-                    's_pid': context.project_id,
-                    's_uid': context.user_id,
-                    'd_consumed': _consumed('share_groups'),
-                    'd_quota': quotas['share_groups'],
-                })
+            self._raise_if_share_group_quotas_exceeded(context, e)
             raise exception.ShareGroupsLimitExceeded()
 
         options = {
@@ -205,13 +237,15 @@ class API(base.Base):
             'user_id': context.user_id,
             'project_id': context.project_id,
             'status': constants.STATUS_CREATING,
-            'share_types': share_type_ids or supported_share_types
+            'share_types': share_type_ids or supported_share_types,
+            'group_replication_type': group_replication_type,
         }
         if original_share_group:
             options['host'] = original_share_group['host']
 
         share_group = {}
         try:
+            # This will create the share group instance in db too.
             share_group = self.db.share_group_create(context, options)
             if share_group_snapshot:
                 members = self.db.share_group_snapshot_members_get_all(
@@ -235,8 +269,13 @@ class API(base.Base):
         except Exception:
             with excutils.save_and_reraise_exception():
                 if share_group:
-                    self.db.share_group_destroy(
-                        context.elevated(), share_group['id'])
+                    if share_group.get('instance'):
+                        share_group_instance_id = share_group['instance']['id']
+                        self.db.share_group_instance_delete(
+                            context.elevated(), share_group_instance_id)
+                    else:
+                        self.db.share_group_destroy(
+                            context.elevated(), share_group['id'])
                 QUOTAS.rollback(context, reservations)
 
         try:
@@ -245,19 +284,23 @@ class API(base.Base):
             with excutils.save_and_reraise_exception():
                 QUOTAS.rollback(context, reservations)
 
-        request_spec = {'share_group_id': share_group['id']}
-        request_spec.update(options)
-        request_spec['availability_zones'] = set(stype_azs_of_new_group)
-        request_spec['share_types'] = share_type_objects
-        request_spec['resource_type'] = share_group_type
+        share_group_instance = share_group['instance']
 
         if share_group_snapshot and original_share_group:
-            self.share_rpcapi.create_share_group(
-                context, share_group, original_share_group['host'])
+            self.share_rpcapi.create_share_group_instance(
+                context, share_group_instance, original_share_group['host'])
         else:
-            self.scheduler_rpcapi.create_share_group(
-                context, share_group_id=share_group['id'],
-                request_spec=request_spec, filter_properties={})
+            request_spec = {
+                'share_group_instance_id': share_group_instance['id'],
+                'share_group_id': share_group['id']}
+            request_spec.update(options)
+            request_spec['availability_zones'] = set(stype_azs_of_new_group)
+            request_spec['share_types'] = share_type_objects
+            request_spec['resource_type'] = share_group_type
+
+            self.scheduler_rpcapi.create_share_group_instance(
+                context, request_spec=request_spec, filter_properties={}
+            )
 
         return share_group
 
@@ -265,9 +308,6 @@ class API(base.Base):
         """Delete share group."""
 
         share_group_id = share_group['id']
-        if not share_group['host']:
-            self.db.share_group_destroy(context.elevated(), share_group_id)
-            return
 
         statuses = (constants.STATUS_AVAILABLE, constants.STATUS_ERROR)
         if not share_group['status'] in statuses:
@@ -286,8 +326,22 @@ class API(base.Base):
             msg = (_("Cannot delete a share group with shares"))
             raise exception.InvalidShareGroup(reason=msg)
 
-        share_group = self.db.share_group_update(
-            context, share_group_id, {'status': constants.STATUS_DELETING})
+        if share_group.has_replicas:
+            msg = _("Share group %s has replicas. Remove the replicas before "
+                    "deleting the share group.") % share_group_id
+            raise exception.Conflict(err=msg)
+
+        share_group_instance = share_group.instance
+        if not share_group_instance:
+            self.db.share_group_destroy(context.elevated(), share_group_id)
+            return
+
+        share_group_instance_id = share_group_instance['id']
+
+        if not share_group_instance['host']:
+            self.db.share_group_instance_delete(context.elevated(),
+                                                share_group_instance_id)
+            return
 
         try:
             reservations = QUOTAS.reserve(
@@ -299,10 +353,16 @@ class API(base.Base):
         except exception.OverQuota as e:
             reservations = None
             LOG.exception(
-                ("Failed to update quota for deleting share group: %s"), e)
+                "Failed to update quota for deleting share group: %s", e)
+
+        share_group_instance = self.db.share_group_instance_update(
+            context, share_group_instance_id,
+            {'status': constants.STATUS_DELETING,
+             'terminated_at': timeutils.utcnow()})
 
         try:
-            self.share_rpcapi.delete_share_group(context, share_group)
+            self.share_rpcapi.delete_share_group_instance(context,
+                                                          share_group_instance)
         except Exception:
             with excutils.save_and_reraise_exception():
                 QUOTAS.rollback(context, reservations)
@@ -376,23 +436,7 @@ class API(base.Base):
         try:
             reservations = QUOTAS.reserve(context, share_group_snapshots=1)
         except exception.OverQuota as e:
-            overs = e.kwargs['overs']
-            usages = e.kwargs['usages']
-            quotas = e.kwargs['quotas']
-
-            def _consumed(name):
-                return (usages[name]['reserved'] + usages[name]['in_use'])
-
-            if 'share_group_snapshots' in overs:
-                msg = ("Quota exceeded for '%(s_uid)s' user in '%(s_pid)s' "
-                       "project. (%(d_consumed)d of "
-                       "%(d_quota)d already consumed).")
-                LOG.warning(msg, {
-                    's_pid': context.project_id,
-                    's_uid': context.user_id,
-                    'd_consumed': _consumed('share_group_snapshots'),
-                    'd_quota': quotas['share_group_snapshots'],
-                })
+            self._raise_if_share_group_quotas_exceeded(context, e)
             raise exception.ShareGroupSnapshotsLimitExceeded()
 
         snap = {}
@@ -503,3 +547,269 @@ class API(base.Base):
         members = self.db.share_group_snapshot_members_get_all(
             context, share_group_snapshot_id)
         return members
+
+    def get_share_group_replica(self, context, group_replica_id):
+        return self.db.share_group_replica_get(context, group_replica_id)
+
+    def get_all_share_group_replicas(self, context, share_group_id=None):
+        if share_group_id:
+            LOG.debug('Searching for share group replicas of group: %s',
+                      share_group_id)
+            return self.db.share_group_replica_get_all_by_share_group(
+                context, share_group_id)
+        else:
+            LOG.debug('Searching for all share group replicas.')
+            return self.db.share_group_replica_get_all(context)
+
+    @staticmethod
+    def _raise_if_share_group_quotas_exceeded(context, quota_exception,
+                                              shares_count=0, shares_size=0):
+        overs = quota_exception.kwargs['overs']
+        usages = quota_exception.kwargs['usages']
+        quotas = quota_exception.kwargs['quotas']
+
+        def _consumed(name):
+            return usages[name]['reserved'] + usages[name]['in_use']
+
+        if 'share_groups' in overs:
+            LOG.warning('Quota exceeded for "%(s_uid)s" user in "%(s_pid)s" '
+                        'project, unable to create share group '
+                        '(%(d_consumed)d of %(d_quota)d already consumed).',
+                        {'s_pid': context.project_id,
+                         's_uid': context.user_id,
+                         'd_consumed': _consumed('share_groups'),
+                         'd_quota': quotas['share_groups']})
+            raise exception.ShareGroupsLimitExceeded()
+        elif 'share_group_snapshots' in overs:
+            LOG.warning('Quota exceeded for "%(s_uid)s" user in "%(s_pid)s" '
+                        'project, unable to create share group snapshot '
+                        '(%(d_consumed)d of %(d_quota)d already consumed).',
+                        {'s_pid': context.project_id,
+                         's_uid': context.user_id,
+                         'd_consumed': _consumed('share_group_snapshots'),
+                         'd_quota': quotas['share_group_snapshots']})
+            raise exception.ShareGroupSnapshotsLimitExceeded()
+        elif 'share_group_replicas' in overs:
+            LOG.warning('Quota share_group_replicas exceeded for '
+                        '"%(s_uid)s" user in "%(s_pid)s" project, unable '
+                        'to create share group replica (%(d_consumed)d of '
+                        '%(d_quota)d already consumed).',
+                        {'s_pid': context.project_id,
+                         's_uid': context.user_id,
+                         'd_consumed': _consumed('share_group_replicas'),
+                         'd_quota': quotas['share_group_replicas']})
+            raise exception.ShareGroupReplicasLimitExceeded()
+        elif 'share_replicas' in overs:
+            LOG.warning('Quota share_replicas exceeded for "%(s_pid)s" '
+                        'user in "%(s_pid)s" project, unable to create '
+                        'replica of share group with %(s_count)d shares '
+                        'in it (%(d_consumed)d share replicas of '
+                        '%(d_quota)d already consumed).',
+                        {'s_pid': context.project_id,
+                         's_uid': context.user_id,
+                         's_count': shares_count,
+                         'd_consumed': _consumed('share_replicas'),
+                         'd_quota': quotas['share_replicas']})
+            raise exception.ShareReplicasLimitExceeded()
+        elif 'replica_gigabytes' in overs:
+            LOG.warning('Quota replica_gigabytes exceeded for "%(s_pid)s" '
+                        'user in "%(s_pid)s" project, unable to create '
+                        'share group replica size of %(s_size)sG '
+                        '(%(d_consumed)dG of %(d_quota)dG already '
+                        'consumed).',
+                        {'s_pid': context.project_id,
+                         's_uid': context.user_id,
+                         's_size': shares_size,
+                         'd_consumed': _consumed('share_replicas'),
+                         'd_quota': quotas['share_replicas']})
+            raise exception.ShareReplicaSizeExceedsAvailableQuota()
+
+    def create_share_group_replica(self, context, share_group_id,
+                                   availability_zone=None):
+        """Creates a new share group replica."""
+        share_group = self.db.share_group_get(context, share_group_id)
+        if not share_group.get('group_replication_type'):
+            msg = _('Replication not supported for share group %s.')
+            raise exception.InvalidShareGroup(message=msg % share_group_id)
+
+        active_replica = (
+            self.db.share_group_replica_get_available_active_replica(
+                context, share_group_id)
+        )
+        if not active_replica:
+            msg = _('Share group %s does not have any active replica in '
+                    'available state.')
+            raise exception.ShareGroupReplicationException(
+                reason=msg % share_group_id)
+
+        group_type_id = share_group.get('share_group_type_id', None)
+        try:
+            share_group_type = self.db.share_group_type_get(context,
+                                                            group_type_id)
+        except exception.ShareGroupTypeNotFound:
+            msg = _('The specified share group type %s does not exist.')
+            raise exception.InvalidInput(reason=msg % group_type_id)
+
+        share_type_ids = set(x['share_type_id']
+                             for x in share_group_type['share_types'])
+
+        all_share_types = [share_types.get_share_type(context, share_type_id)
+                           for share_type_id in share_type_ids]
+        all_azs = []
+        for share_type in all_share_types:
+            azs = share_type.get('extra_specs', {}).get('availability_zones',
+                                                        '')
+            all_azs.extend([t for t in azs.split(',') if azs])
+            if availability_zone and azs and availability_zone not in azs:
+                # If an AZ is requested, it must be supported by the AZs
+                # configured in each of the share types of the share group.
+                msg = _('Share group replica cannot be created since the '
+                        'share type %(type)s of the share group is not '
+                        'supported within the availability zone chosen %(az)s.'
+                        )
+                type_name = '%s' % (share_type['name'] or '')
+                type_id = '(ID: %s)' % share_type['id']
+                payload = {'type': '%s%s' % (type_name, type_id),
+                           'az': availability_zone}
+                raise exception.InvalidInput(message=msg % payload)
+
+        shares = self.db.share_get_all_by_share_group_id(context,
+                                                         share_group_id)
+        shares_size = sum(s['size'] for s in shares)
+
+        # Check status of all shares, they must be active in order to replicate
+        # the group
+        for s in shares:
+            if not s['status'] == constants.STATUS_AVAILABLE:
+                msg = _('Share %(s)s in share group must have status of '
+                        '%(status)s in order to create a group replica') % {
+                    's': s['id'], 'status': constants.STATUS_AVAILABLE}
+                raise exception.InvalidShareGroup(reason=msg)
+        try:
+            # TODO(RyanLiang): need to reserve by share_type?
+            reservations = QUOTAS.reserve(context, share_group_replicas=1,
+                                          share_replicas=len(shares),
+                                          replica_gigabytes=shares_size)
+        except exception.OverQuota as e:
+            self._raise_if_share_group_quotas_exceeded(
+                context, e, shares_count=len(shares), shares_size=shares_size)
+            raise
+
+        az_id = None
+        if availability_zone:
+            az_id = self.db.availability_zone_get(context,
+                                                  availability_zone).id
+        host = ''
+        share_network_id = share_group['share_network_id']
+        share_server_id = share_group['share_server_id']
+        cast_rules_to_readonly = (share_group['group_replication_type']
+                                  == constants.REPLICATION_TYPE_READABLE)
+        group_instance_values = {
+            'user_id': context.user_id,
+            'project_id': context.project_id,
+            'availability_zone_id': az_id,
+            'host': host,
+            'share_group_id': share_group_id,
+            'share_group_type_id': share_group['share_group_type_id'],
+            'share_network_id': share_network_id,
+            'share_server_id': share_server_id,
+            'status': constants.STATUS_CREATING,
+        }
+
+        replica = {}
+        try:
+            replica = self.db.share_group_instance_create(
+                share_group_id, group_instance_values)
+
+            for shr in shares:
+                self.db.share_instance_create(
+                    context, shr['id'],
+                    {'share_network_id': share_network_id,
+                     'status': constants.STATUS_CREATING,
+                     'scheduled_at': timeutils.utcnow(),
+                     'host': host,
+                     'availability_zone_id': az_id,
+                     'share_type_id': shr['instance']['share_type_id'],
+                     'cast_rules_to_readonly': cast_rules_to_readonly,
+                     'share_group_instance_id': replica['id']},)
+            QUOTAS.commit(context, reservations)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                try:
+                    # It will delete the group replica and all of it's members
+                    # - the share replicas.
+                    if replica:
+                        self.db.share_group_replica_delete(context,
+                                                           replica['id'])
+                finally:
+                    QUOTAS.rollback(context, reservations)
+
+        self.db.share_group_replica_update(
+            context, replica['id'],
+            {'replica_state': constants.REPLICA_STATE_OUT_OF_SYNC})
+
+        # TODO(RyanLiang): handle snapshots of shares in the group.
+
+        request_spec = {'share_group_instance_id': replica['id']}
+        request_spec.update(group_instance_values)
+        request_spec['availability_zones'] = set(all_azs)
+        request_spec['share_types'] = all_share_types
+        request_spec['resource_type'] = share_group_type
+
+        all_replicas = self.db.share_group_replica_get_all_by_share_group(
+            context, share_group_id)
+        request_spec['active_group_replica_host'] = active_replica['host']
+        request_spec['all_group_replica_hosts'] = ','.join(
+            replica['host'] for replica in all_replicas)
+
+        self.scheduler_rpcapi.create_share_group_replica(
+            context, request_spec=request_spec, filter_properties={}
+        )
+        return replica
+
+    def delete_share_group_replica(self, context, group_replica, force=False):
+        """Deletes the share group replica."""
+        # Disallow deletion of ONLY active replica, *even* when this
+        # operation is forced.
+        group_replicas = self.db.share_group_replica_get_all_by_share_group(
+            context, group_replica['share_group_id'])
+        active_replicas = list(filter(
+            lambda x: x['replica_state'] == constants.REPLICA_STATE_ACTIVE,
+            group_replicas))
+        if (group_replica.get('replica_state') ==
+                constants.REPLICA_STATE_ACTIVE and len(active_replicas) == 1):
+            msg = _('Cannot delete last active replica.')
+            raise exception.ReplicationException(reason=msg)
+
+        group_replica_id = group_replica['id']
+        LOG.info('Deleting share group replica %s.', group_replica_id)
+
+        self.db.share_group_replica_update(
+            context, group_replica_id,
+            {
+                'status': constants.STATUS_DELETING,
+                'terminated_at': timeutils.utcnow(),
+            }
+        )
+
+        if not group_replica['host']:
+            # Delete any snapshot instances created on the database
+            share_replicas = group_replica.get('share_group_replica_members',
+                                               [])
+            for share_replica in share_replicas:
+                replica_snapshots = (
+                    self.db.share_snapshot_instance_get_all_with_filters(
+                        context, {'share_instance_ids': share_replica['id']})
+                )
+                for snapshot in replica_snapshots:
+                    self.db.share_snapshot_instance_delete(context,
+                                                           snapshot['id'])
+
+            # Delete the group replica from the database
+            self.db.share_group_replica_delete(context, group_replica_id)
+        else:
+
+            self.share_rpcapi.delete_share_group_replica(context,
+                                                         group_replica,
+                                                         force=force)
+        # TODO(RyanLiang): check quota or not.

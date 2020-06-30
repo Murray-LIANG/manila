@@ -41,9 +41,11 @@ class SchedulerAPI(object):
         1.7 - Updated migrate_share_to_host method with new parameters
         1.8 - Rename create_consistency_group -> create_share_group method
         1.9 - Add cached parameter to get_pools method
+        2.0 - Add create_share_group_replica,
+            rename create_share_group to create_share_group_instance.
     """
 
-    RPC_API_VERSION = '1.9'
+    RPC_API_VERSION = '2.0'
 
     def __init__(self):
         super(SchedulerAPI, self).__init__()
@@ -75,16 +77,18 @@ class SchedulerAPI(object):
         return call_context.call(context, 'get_pools', filters=filters,
                                  cached=cached)
 
-    def create_share_group(self, context, share_group_id, request_spec=None,
-                           filter_properties=None):
-        """Casts an rpc to the scheduler to create a share group.
+    def create_share_group_instance(self, context,
+                                    request_spec=None,
+                                    filter_properties=None):
+        """Casts an rpc to the scheduler to create a share group instance.
 
         Example of 'request_spec' argument value::
 
             {
 
+                'share_group_instance_id': 'some_fake_uuid',
                 'share_group_type_id': 'fake_share_group_type_id',
-                'share_group_id': 'some_fake_uuid',
+                'share_group_id': 'fake_share_group_id',
                 'availability_zone_id': 'some_fake_az_uuid',
                 'share_types': [models.ShareType],
                 'resource_type': models.ShareGroup,
@@ -93,10 +97,9 @@ class SchedulerAPI(object):
 
         """
         request_spec_p = jsonutils.to_primitive(request_spec)
-        call_context = self.client.prepare(version='1.8')
+        call_context = self.client.prepare(version='2.0')
         return call_context.cast(context,
-                                 'create_share_group',
-                                 share_group_id=share_group_id,
+                                 'create_share_group_instance',
                                  request_spec=request_spec_p,
                                  filter_properties=filter_properties)
 
@@ -139,4 +142,13 @@ class SchedulerAPI(object):
                                  share_id=share_id,
                                  driver_options=driver_options,
                                  request_spec=request_spec,
+                                 filter_properties=filter_properties)
+
+    def create_share_group_replica(self, context, request_spec=None,
+                                   filter_properties=None):
+        request_spec_p = jsonutils.to_primitive(request_spec)
+        call_context = self.client.prepare(version='2.0')
+        return call_context.cast(context,
+                                 'create_share_group_replica',
+                                 request_spec=request_spec_p,
                                  filter_properties=filter_properties)

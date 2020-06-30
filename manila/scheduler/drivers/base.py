@@ -71,6 +71,17 @@ def share_group_update_db(context, share_group_id, host):
     return db.share_group_update(context, share_group_id, values)
 
 
+def share_group_replica_update_db(context, share_group_replica_id, host):
+    """Set the host and the updated_at field of a share group replica.
+
+    :returns: A share group replica with the updated fields set properly.
+    """
+    now = timeutils.utcnow()
+    values = {'host': host, 'updated_at': now}
+    return db.share_group_replica_update(context, share_group_replica_id,
+                                         values)
+
+
 class Scheduler(object):
     """The base class that all Scheduler classes should inherit from."""
 
@@ -129,3 +140,9 @@ class Scheduler(object):
                                 filter_properties):
         """Must override schedule method for create replica to work."""
         raise NotImplementedError(_("Must implement schedule_create_replica"))
+
+    def schedule_create_share_group_replica(self, context, request_spec,
+                                            filter_properties):
+        """Must override schedule method for create group replica to work."""
+        raise NotImplementedError(
+            _("Must implement schedule_create_share_group_replica"))

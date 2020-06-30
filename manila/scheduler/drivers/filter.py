@@ -185,6 +185,27 @@ class FilterScheduler(base.Scheduler):
             # snapshot clone creation request.
             share_type.get('extra_specs', {}).pop('share_backend_name', None)
 
+        active_group_replica_host = request_spec.get(
+            'active_group_replica_host')
+        group_replication_domain = None
+        if active_group_replica_host:
+            try:
+                match_host = [
+                    host for host in
+                    self.host_manager.get_all_host_states_share(elevated)
+                    if host.host == active_group_replica_host
+                ][0]
+                group_replication_domain = match_host.group_replication_domain
+            except IndexError:
+                # Ignore if active_group_replica_host not found.
+                # TODO(RyanLiang): Raise error if not found, because it will
+                # cause the share group replica being scheduled to a host
+                # with the same group_replication_type but with
+                # group_replication_domain=None, however this case almost
+                # never happens unless the share driver reports None
+                # group_replication_domain.
+                pass
+
         if filter_properties is None:
             filter_properties = {}
         self._populate_retry_share(filter_properties, resource_properties)
@@ -196,6 +217,8 @@ class FilterScheduler(base.Scheduler):
                                   'resource_type': resource_type,
                                   'share_group': share_group,
                                   'replication_domain': replication_domain,
+                                  'group_replication_domain':
+                                      group_replication_domain,
                                   })
 
         self.populate_filter_properties_share(request_spec, filter_properties)
@@ -330,8 +353,8 @@ class FilterScheduler(base.Scheduler):
         updated_share_group = base.share_group_update_db(
             context, share_group_id, host)
 
-        self.share_rpcapi.create_share_group(
-            context, updated_share_group, host)
+        self.share_rpcapi.create_share_group_instance(
+            context, updated_share_group.instance, host)
 
     def _get_weighted_hosts_for_share_type(self, context, request_spec,
                                            share_type):
@@ -492,3 +515,25 @@ class FilterScheduler(base.Scheduler):
                % {'id': request_spec['share_id'], 'host': host,
                   'last_filter': last_filter})
         raise exception.NoValidHost(reason=msg)
+
+    def schedule_create_share_group_replica(self, context, request_spec,
+                                            filter_properties):
+        group_replica_id = request_spec.get('share_group_instance_id')
+        LOG.info('Scheduling share group replica %s.', group_replica_id)
+
+        host = self._get_best_host_for_share_group(context, request_spec)
+        if not host:
+            msg = _('No hosts available for share group replica %s.'
+                    ) % group_replica_id
+            raise exception.NoValidHost(reason=msg)
+
+        msg = 'Chose host %(host)s for create_group_replica %(replica)s.'
+        LOG.info(msg, {'host': host, 'replica': group_replica_id})
+
+        updated_group_replica = base.share_group_replica_update_db(
+            context, group_replica_id, host)
+
+        # TODO(RyanLiang): add host retry check.
+
+        self.share_rpcapi.create_share_group_replica(
+            context, updated_group_replica, host)

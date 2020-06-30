@@ -454,6 +454,12 @@ class ShareReplicaSizeExceedsAvailableQuota(QuotaError):
         "gigabytes quota.")
 
 
+class ShareReplicationNotSupported(ManilaException):
+    message = _(
+        "Share driver does not support share replication creation or deletion."
+    )
+
+
 class GlusterfsException(ManilaException):
     message = _("Unknown Gluster exception.")
 
@@ -906,6 +912,11 @@ class ShareGroupSnapshotMemberNotFound(NotFound):
                 "found.")
 
 
+class ShareGroupSnapshotInstanceNotFound(NotFound):
+    message = _("Share group snapshot instance "
+                "%(share_group_snapshot_instance_id)s could not be found.")
+
+
 class InvalidShareGroup(Invalid):
     message = _("Invalid share group: %(reason)s")
 
@@ -919,9 +930,22 @@ class ShareGroupInstanceNotFound(NotFound):
                 "be found.")
 
 
+class InvalidShareGroupReplica(Invalid):
+    message = _("Invalid share group replica: %(reason)s")
+
+
 class ShareGroupReplicaNotFound(NotFound):
     message = _("Share group replica %(share_group_replica_id)s could not "
                 "be found.")
+
+
+class ShareGroupReplicationException(ManilaException):
+    message = _("Unable to perform a share group replication action:"
+                " %(reason)s.")
+
+
+class ShareGroupReplicasLimitExceeded(QuotaError):
+    message = _("Maximum number of allowed share-group-replicas is exceeded.")
 
 
 class DriverNotInitialized(ManilaException):

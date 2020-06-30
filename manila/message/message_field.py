@@ -20,6 +20,7 @@ class Resource(object):
     SHARE_GROUP = 'SHARE_GROUP'
     SHARE_REPLICA = 'SHARE_REPLICA'
     SHARE_SNAPSHOT = 'SHARE_SNAPSHOT'
+    SHARE_GROUP_REPLICA = 'SHARE_GROUP_REPLICA'
 
 
 class Action(object):
@@ -94,6 +95,10 @@ class Detail(object):
           " smaller than the current used space. The share status has been"
           " set to available. Please select a size greater than the current"
           " used space."))
+    NO_ACTIVE_AVAILABLE_GROUP_REPLICA = (
+        '019',
+        _("An 'active' replica must exist in 'available' state to create a "
+          "new replica for share group."))
 
     ALL = (UNKNOWN_ERROR,
            NO_VALID_HOST,

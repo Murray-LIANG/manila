@@ -62,7 +62,7 @@ MAPPING = {
 class SchedulerManager(manager.Manager):
     """Chooses a host to create shares."""
 
-    RPC_API_VERSION = '1.9'
+    RPC_API_VERSION = '2.0'
 
     def __init__(self, scheduler_driver=None, service_name=None,
                  *args, **kwargs):
@@ -227,12 +227,16 @@ class SchedulerManager(manager.Manager):
         LOG.warning("Failed to schedule_%(method)s: %(ex)s",
                     {"method": method, "ex": ex})
 
-        share_group_state = {'status': constants.STATUS_ERROR}
+        error_status = {'status': constants.STATUS_ERROR}
 
         share_group_id = request_spec.get('share_group_id')
-
         if share_group_id:
-            db.share_group_update(context, share_group_id, share_group_state)
+            db.share_group_update(context, share_group_id, error_status)
+
+        share_group_instance_id = request_spec.get('share_group_instance_id')
+        if share_group_instance_id:
+            db.share_group_instance_update(context, share_group_instance_id,
+                                           error_status)
 
         if action:
             self.message_api.create(
@@ -244,19 +248,22 @@ class SchedulerManager(manager.Manager):
     def _expire_reservations(self, context):
         quota.QUOTAS.expire(context)
 
-    def create_share_group(self, context, share_group_id, request_spec=None,
-                           filter_properties=None):
+    def create_share_group_instance(self, context, request_spec=None,
+                                    filter_properties=None):
         try:
+            share_group_id = request_spec['share_group_id']
+            # TODO(RyanLiang): remove share_group_id from driver's
+            # schedule_create_share_group
             self.driver.schedule_create_share_group(
                 context, share_group_id, request_spec, filter_properties)
         except exception.NoValidHost as ex:
             self._set_share_group_error_state(
-                'create_share_group', context, ex, request_spec,
+                'create_share_group_instance', context, ex, request_spec,
                 message_field.Action.ALLOCATE_HOST)
         except Exception as ex:
             with excutils.save_and_reraise_exception():
                 self._set_share_group_error_state(
-                    'create_share_group', context, ex, request_spec)
+                    'create_share_group_instance', context, ex, request_spec)
 
     def _set_share_replica_error_state(self, context, method, exc,
                                        request_spec, action=None):
@@ -307,3 +314,39 @@ class SchedulerManager(manager.Manager):
     @coordination.synchronized('locked-clean-expired-messages')
     def _clean_expired_messages(self, context):
         self.message_api.cleanup_expired_messages(context)
+
+    def _set_share_group_replica_error_state(self, context, method, exc,
+                                             request_spec, action=None):
+        LOG.warning('Failed to schedule_%(method)s: %(exc)s',
+                    {'method': method, 'exc': exc})
+        status_updates = {
+            'status': constants.STATUS_ERROR,
+            'replica_state': constants.STATUS_ERROR,
+        }
+        share_group_replica_id = request_spec.get('share_group_instance_id')
+
+        # TODO(RyanLiang): set snapshots of shares in the group to error.
+
+        db.share_group_replica_update(context, share_group_replica_id,
+                                      status_updates)
+
+        if action:
+            self.message_api.create(
+                context, action, context.project_id,
+                resource_type=message_field.Resource.SHARE_GROUP_REPLICA,
+                resource_id=share_group_replica_id, exception=exc)
+
+    def create_share_group_replica(self, context, request_spec=None,
+                                   filter_properties=None):
+        try:
+            self.driver.schedule_create_share_group_replica(context,
+                                                            request_spec,
+                                                            filter_properties)
+        except exception.NoValidHost as e:
+            self._set_share_group_replica_error_state(
+                context, 'create_share_group_replica', e, request_spec,
+                action=message_field.Action.ALLOCATE_HOST)
+        except Exception as e:
+            with excutils.save_and_reraise_exception():
+                self._set_share_group_replica_error_state(
+                    context, 'create_share_group_replica', e, request_spec)

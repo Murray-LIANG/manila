@@ -489,6 +489,11 @@ class API(base.Base):
             availability_zone_id = self.db.availability_zone_get(
                 context, availability_zone).id
 
+        share_group_instance = share_group and share_group.get('instance',
+                                                               None)
+        share_group_instance_id = (share_group_instance
+                                   and share_group_instance.get('id', None))
+
         # TODO(u_glide): Add here validation that provided share network
         # doesn't conflict with provided availability_zone when Neutron
         # will have AZ support.
@@ -502,6 +507,7 @@ class API(base.Base):
                 'availability_zone_id': availability_zone_id,
                 'share_type_id': share_type_id,
                 'cast_rules_to_readonly': cast_rules_to_readonly,
+                'share_group_instance_id': share_group_instance_id,
             }
         )
 
@@ -536,6 +542,7 @@ class API(base.Base):
             'status': share_instance['status'],
             'replica_state': share_instance['replica_state'],
             'share_type_id': share_instance['share_type_id'],
+            'share_group_instance_id': share_group_instance_id,
         }
 
         share_type = None
@@ -552,6 +559,7 @@ class API(base.Base):
             'snapshot_host': snapshot_host,
             'share_type': share_type,
             'share_group': share_group,
+            'share_group_instance': share_group_instance,
             'availability_zone_id': availability_zone_id,
             'availability_zones': availability_zones,
         }
@@ -565,8 +573,8 @@ class API(base.Base):
             raise exception.InvalidShare(message=msg % share['id'])
 
         if share.get('share_group_id'):
-            msg = _("Replication not supported for shares in a group.")
-            raise exception.InvalidShare(message=msg)
+            msg = _("Share %s is in a group. Try share group replication.")
+            raise exception.InvalidShare(message=msg % share['id'])
 
         self._check_is_share_busy(share)
 

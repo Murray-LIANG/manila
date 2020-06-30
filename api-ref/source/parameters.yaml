@@ -2126,7 +2126,7 @@ share_group_replica_az:
   in: body
   required: false
   type: string
-  min_version: 2.52
+  min_version: 2.56
 share_group_replica_cast_rules_to_readonly:
   description: |
     If the share group replica has its ``cast_rules_to_readonly`` attribute set
@@ -2134,7 +2134,7 @@ share_group_replica_cast_rules_to_readonly:
   in: body
   required: true
   type: string
-  min_version: 2.52
+  min_version: 2.56
 share_group_replica_force_delete:
   description: |
     To force-delete a share group replica, set this value to
@@ -2143,21 +2143,21 @@ share_group_replica_force_delete:
   in: body
   required: true
   type: string
-  min_version: 2.52
+  min_version: 2.56
 share_group_replica_host:
   description: |
     The host name of the share group replica.
   in: body
   required: true
   type: string
-  min_version: 2.52
+  min_version: 2.56
 share_group_replica_id:
   description: |
     The UUID of the share group replica.
   in: body
   required: true
   type: string
-  min_version: 2.52
+  min_version: 2.56
 share_group_replica_replica_state:
   description: |
     The replica state of a share group replica. List of possible values:
@@ -2165,28 +2165,28 @@ share_group_replica_replica_state:
   in: body
   required: true
   type: string
-  min_version: 2.52
+  min_version: 2.56
 share_group_replica_reset_replica_state:
   description: |
     The ``reset_replica_state`` object.
   in: body
   required: true
   type: object
-  min_version: 2.52
+  min_version: 2.56
 share_group_replica_share_id:
   description: |
     The UUID of the share from which to create a share group replica.
   in: body
   required: true
   type: string
-  min_version: 2.52
+  min_version: 2.56
 share_group_replica_share_network_id:
   description: |
     The UUID of the share network.
   in: body
   required: false
   type: string
-  min_version: 2.52
+  min_version: 2.56
 share_group_replica_status:
   description: |
     The status of a share group replica. List of possible values:
@@ -2195,7 +2195,7 @@ share_group_replica_status:
   in: body
   required: true
   type: string
-  min_version: 2.52
+  min_version: 2.56
 share_group_status:
   description: |
     The share group status, which is ``available``,

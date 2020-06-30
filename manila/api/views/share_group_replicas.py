@@ -27,33 +27,32 @@ class ShareGroupReplicaViewBuilder(common.ViewBuilder):
         return self._list_view(self.summary, request, share_group_replicas)
 
     def detail_list(self, request, share_group_replicas):
-        """Detailed view of a list of share_group_snapshots."""
+        """Detailed view of a list of share_group_replicas."""
         return self._list_view(self.detail, request, share_group_replicas)
 
+    @staticmethod
+    def _member_dict(share_replica):
+        return {
+            'id': share_replica.get('id'),
+            'share_group_replica_id':
+                share_replica.get('share_group_instance_id'),
+            'share_id': share_replica.get('share_id'),
+            'status': share_replica.get('status'),
+            'replica_state': share_replica.get('replica_state'),
+        }
+
     def member_list(self, request, members):
-        """Show a list of share replicas as members of a share group replica.
-        """
-        members_list = [
-            {
-                'id': replica.get('id'),
-                'share_group_replica_id':
-                    replica.get('share_group_replica_id'),
-                'share_id': replica.get('share_id'),
-                'availability_zone': replica.get('availability_zone'),
-                'created_at': replica.get('created_at'),
-                'status': replica.get('status'),
-                'share_network_id': replica.get('share_network_id'),
-                'replica_state': replica.get('replica_state'),
-                'updated_at': replica.get('updated_at'),
-            } for replica in members
-        ]
+        """Show a list of share_replicas as members of share_group_replica."""
 
-        members_dict = {"share_group_replica_members": members_list}
+        members_dict = {
+            'share_group_replica_members':
+                [self._member_dict(share_replica) for share_replica in members]
+        }
 
-        members_links = self._get_collection_links(
-            request, members, "share_group_replica_id")
+        members_links = self._get_collection_links(request, members,
+                                                   'share_group_replica_id')
         if members_links:
-            members_dict["share_group_snapshot_members_links"] = members_links
+            members_dict['share_group_replica_members_links'] = members_links
 
         return members_dict
 
@@ -73,24 +72,23 @@ class ShareGroupReplicaViewBuilder(common.ViewBuilder):
     def detail(self, request, share_group_replica):
         """Detailed view of a single share group replica."""
 
-        members = [
-            {
-                'id': member.get('id'),
-                'share_id': member.get('share_instance', {}).get('share_id'),
-            } for member in share_group_replica.get(
-                'share_group_replica_members')
-        ]
+        members = [self._member_dict(share_replica)
+                   for share_replica in
+                   share_group_replica.get('share_group_replica_members', [])]
+
         share_group_replica_dict = {
             'id': share_group_replica.get('id'),
+            'members': members,
             'share_group_id': share_group_replica.get('share_group_id'),
-            'availability_zone': share_group_replica.get('availability_zone'),
             'status': share_group_replica.get('status'),
             'replica_state': share_group_replica.get('replica_state'),
-            'created_at': share_group_replica.get('created_at'),
-            'updated_at': share_group_replica.get('updated_at'),
-            'members': members,
             'links':
                 self._get_links(request, share_group_replica.get('id')),
+
+            'availability_zone': share_group_replica.get('availability_zone'),
+            'created_at': share_group_replica.get('created_at'),
+            'updated_at': share_group_replica.get('updated_at'),
+
         }
         return {'share_group_replica': share_group_replica_dict}
 

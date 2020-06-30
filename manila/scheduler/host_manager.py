@@ -154,6 +154,8 @@ class HostState(object):
 
         # Share Group capabilities
         self.sg_consistent_snapshot_support = None
+        self.group_replication_type = None
+        self.group_replication_domain = None
 
     def update_capabilities(self, capabilities=None, service=None):
         # Read-only capability dicts
@@ -342,6 +344,13 @@ class HostState(object):
         if self.ipv6_support is not None:
             pool_cap['ipv6_support'] = self.ipv6_support
 
+        if 'group_replication_type' not in pool_cap:
+            pool_cap['group_replication_type'] = self.group_replication_type
+
+        if 'group_replication_domain' not in pool_cap:
+            pool_cap['group_replication_domain'] = (
+                self.group_replication_domain)
+
     def update_backend(self, capability):
         self.share_backend_name = capability.get('share_backend_name')
         self.vendor_name = capability.get('vendor_name')
@@ -365,6 +374,10 @@ class HostState(object):
             self.ipv4_support = capability['ipv4_support']
         if capability.get('ipv6_support') is not None:
             self.ipv6_support = capability['ipv6_support']
+        self.group_replication_type = capability.get(
+            'share_group_stats', {}).get('group_replication_type')
+        self.group_replication_domain = capability.get(
+            'share_group_stats', {}).get('group_replication_domain')
 
     def consume_from_share(self, share):
         """Incrementally update host state from an share."""
@@ -461,6 +474,10 @@ class PoolState(HostState):
                 'replication_domain')
             self.sg_consistent_snapshot_support = capability.get(
                 'sg_consistent_snapshot_support')
+            self.group_replication_type = capability.get(
+                'group_replication_type')
+            self.group_replication_domain = capability.get(
+                'group_replication_domain')
 
     def update_pools(self, capability):
         # Do nothing, since we don't have pools within pool, yet

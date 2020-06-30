@@ -22,7 +22,7 @@ from webob import exc
 
 from manila.api import common
 from manila.api.openstack import wsgi
-import manila.api.views.share_group_snapshots as share_group_snapshots_views
+import manila.api.views.share_group_replicas as share_group_replicas_views
 from manila import db
 from manila import exception
 from manila.i18n import _
@@ -39,141 +39,116 @@ class ShareGroupReplicaController(wsgi.Controller, wsgi.AdminActionsMixin):
 
     resource_name = 'share_group_replica'
     _view_builder_class = (
-        share_group_snapshots_views.ShareGroupSnapshotViewBuilder)
+        share_group_replicas_views.ShareGroupReplicaViewBuilder)
 
     def __init__(self):
-        super(ShareGroupSnapshotController, self).__init__()
+        super(ShareGroupReplicaController, self).__init__()
         self.share_group_api = share_group_api.API()
 
-    def _get_share_group_snapshot(self, context, sg_snapshot_id):
+    def _get_share_group_replica(self, context, group_replica_id):
         try:
-            return self.share_group_api.get_share_group_snapshot(
-                context, sg_snapshot_id)
+            return self.share_group_api.get_share_group_replica(
+                context, group_replica_id)
         except exception.NotFound:
-            msg = _("Share group snapshot %s not found.") % sg_snapshot_id
+            msg = _("Share group replica %s not found.") % group_replica_id
             raise exc.HTTPNotFound(explanation=msg)
 
-    @wsgi.Controller.api_version('2.31', experimental=True)
+    @wsgi.Controller.api_version(MIN_SUPPORTED_API_VERSION, experimental=True)
     @wsgi.Controller.authorize('get')
     def show(self, req, id):
-        """Return data about the given share group snapshot."""
+        """Returns data about the given share group replica."""
         context = req.environ['manila.context']
-        sg_snapshot = self._get_share_group_snapshot(context, id)
-        return self._view_builder.detail(req, sg_snapshot)
+        group_replica = self._get_share_group_replica(context, id)
+        return self._view_builder.detail(req, group_replica)
 
-    @wsgi.Controller.api_version('2.31', experimental=True)
-    @wsgi.Controller.authorize
-    def delete(self, req, id):
-        """Delete a share group snapshot."""
+    @wsgi.Controller.authorize('get_all')
+    def _get_share_group_replicas(self, req, is_detail=False):
+        """Returns a list of share group replicas."""
         context = req.environ['manila.context']
-        LOG.info("Delete share group snapshot with id: %s",
-                 id, context=context)
-        sg_snapshot = self._get_share_group_snapshot(context, id)
+
+        share_group_id = req.params.get('share_group_id')
         try:
-            self.share_group_api.delete_share_group_snapshot(
-                context, sg_snapshot)
-        except exception.InvalidShareGroupSnapshot as e:
-            raise exc.HTTPConflict(explanation=six.text_type(e))
-        return webob.Response(status_int=http_client.ACCEPTED)
+            group_replicas = self.share_group_api.get_all_share_group_replicas(
+                context,
+                share_group_id=share_group_id,
+            )
+        except exception.NotFound:
+            msg = _('Share group replicas of share group ID %s not found.'
+                    ) % share_group_id
+            raise exc.HTTPNotFound(explanation=msg)
 
-    @wsgi.Controller.api_version('2.31', experimental=True)
-    @wsgi.Controller.authorize('get_all')
-    def index(self, req):
-        """Returns a summary list of share group snapshots."""
-        return self._get_share_group_snaps(req, is_detail=False)
-
-    @wsgi.Controller.api_version('2.31', experimental=True)
-    @wsgi.Controller.authorize('get_all')
-    def detail(self, req):
-        """Returns a detailed list of share group snapshots."""
-        return self._get_share_group_snaps(req, is_detail=True)
-
-    def _get_share_group_snaps(self, req, is_detail):
-        """Returns a list of share group snapshots."""
-        context = req.environ['manila.context']
-
-        search_opts = {}
-        search_opts.update(req.GET)
-
-        # Remove keys that are not related to group attrs
-        search_opts.pop('limit', None)
-        search_opts.pop('offset', None)
-        sort_key = search_opts.pop('sort_key', 'created_at')
-        sort_dir = search_opts.pop('sort_dir', 'desc')
-
-        snaps = self.share_group_api.get_all_share_group_snapshots(
-            context, detailed=is_detail, search_opts=search_opts,
-            sort_dir=sort_dir, sort_key=sort_key)
-
-        limited_list = common.limited(snaps, req)
+        limited_list = common.limited(group_replicas, req)
 
         if is_detail:
-            snaps = self._view_builder.detail_list(req, limited_list)
+            return self._view_builder.detail_list(req, limited_list)
         else:
-            snaps = self._view_builder.summary_list(req, limited_list)
-        return snaps
+            return self._view_builder.summary_list(req, limited_list)
 
-    @wsgi.Controller.api_version('2.31', experimental=True)
-    @wsgi.Controller.authorize
-    def update(self, req, id, body):
-        """Update a share group snapshot."""
-        context = req.environ['manila.context']
-        key = 'share_group_snapshot'
-        if not self.is_valid_body(body, key):
-            msg = _("'%s' is missing from the request body.") % key
-            raise exc.HTTPBadRequest(explanation=msg)
+    @wsgi.Controller.api_version(MIN_SUPPORTED_API_VERSION, experimental=True)
+    @wsgi.Controller.authorize('get_all')
+    def index(self, req):
+        """Returns a summary list of share group replicas."""
+        return self._get_share_group_replicas(req, is_detail=False)
 
-        sg_snapshot_data = body[key]
-        valid_update_keys = {
-            'name',
-            'description',
-        }
-        invalid_fields = set(sg_snapshot_data.keys()) - valid_update_keys
-        if invalid_fields:
-            msg = _("The fields %s are invalid or not allowed to be updated.")
-            raise exc.HTTPBadRequest(explanation=msg % invalid_fields)
+    @wsgi.Controller.api_version(MIN_SUPPORTED_API_VERSION, experimental=True)
+    @wsgi.Controller.authorize('get_all')
+    def detail(self, req):
+        """Returns a detailed list of share group replicas."""
+        return self._get_share_group_replicas(req, is_detail=True)
 
-        sg_snapshot = self._get_share_group_snapshot(context, id)
-        sg_snapshot = self.share_group_api.update_share_group_snapshot(
-            context, sg_snapshot, sg_snapshot_data)
-        return self._view_builder.detail(req, sg_snapshot)
-
-    @wsgi.Controller.api_version('2.31', experimental=True)
+    @wsgi.Controller.api_version(MIN_SUPPORTED_API_VERSION, experimental=True)
     @wsgi.response(202)
     @wsgi.Controller.authorize
     def create(self, req, body):
-        """Creates a new share group snapshot."""
+        """Creates a new share group replica."""
         context = req.environ['manila.context']
 
-        if not self.is_valid_body(body, 'share_group_snapshot'):
-            msg = _("'share_group_snapshot' is missing from the request body.")
-            raise exc.HTTPBadRequest(explanation=msg)
+        if not self.is_valid_body(body, 'share_group_replica'):
+            msg = _('"share_group_replica" is missing from the request body.')
+            raise exc.HTTPUnprocessableEntity(explanation=msg)
 
-        share_group_snapshot = body.get('share_group_snapshot', {})
+        share_group_replica = body['share_group_replica']
 
-        share_group_id = share_group_snapshot.get('share_group_id')
+        share_group_id = share_group_replica.get('share_group_id')
         if not share_group_id:
-            msg = _("Must supply 'share_group_id' attribute.")
+            msg = _('Must supply "share_group_id" attribute.')
             raise exc.HTTPBadRequest(explanation=msg)
         if not uuidutils.is_uuid_like(share_group_id):
-            msg = _("The 'share_group_id' attribute must be a uuid.")
-            raise exc.HTTPBadRequest(explanation=six.text_type(msg))
+            msg = _('The "share_group_id" attribute must be a uuid.')
+            raise exc.HTTPBadRequest(explanation=msg)
 
-        kwargs = {"share_group_id": share_group_id}
-        if 'name' in share_group_snapshot:
-            kwargs['name'] = share_group_snapshot.get('name')
-        if 'description' in share_group_snapshot:
-            kwargs['description'] = share_group_snapshot.get('description')
+        availability_zone = body.get('share_replica').get('availability_zone')
 
         try:
-            new_snapshot = self.share_group_api.create_share_group_snapshot(
-                context, **kwargs)
+            new_replica = self.share_group_api.create_share_group_replica(
+                context, share_group_id=share_group_id,
+                availability_zone=availability_zone)
         except exception.ShareGroupNotFound as e:
             raise exc.HTTPBadRequest(explanation=six.text_type(e))
         except exception.InvalidShareGroup as e:
             raise exc.HTTPConflict(explanation=six.text_type(e))
 
-        return self._view_builder.detail(req, dict(new_snapshot.items()))
+        return self._view_builder.detail(req, dict(new_replica.items()))
+
+    @wsgi.Controller.api_version(MIN_SUPPORTED_API_VERSION, experimental=True)
+    @wsgi.Controller.authorize
+    def delete(self, req, id):
+        """Deletes a share group replica."""
+        context = req.environ['manila.context']
+        LOG.info("Deleting share group replica with id: %s",
+                 id, context=context)
+        try:
+            group_replica = self._get_share_group_replica(context, id)
+        except exception.ShareGroupReplicaNotFound:
+            msg = _("No group replica exists with ID %s.")
+            raise exc.HTTPNotFound(explanation=msg % id)
+
+        try:
+            self.share_group_api.delete_share_group_replica(
+                context, group_replica)
+        except exception.ReplicationException as e:
+            raise exc.HTTPBadRequest(explanation=six.text_type(e))
+        return webob.Response(status_int=http_client.ACCEPTED)
 
     @wsgi.Controller.api_version('2.31', experimental=True)
     @wsgi.Controller.authorize('get')
@@ -210,4 +185,4 @@ class ShareGroupReplicaController(wsgi.Controller, wsgi.AdminActionsMixin):
 
 
 def create_resource():
-    return wsgi.Resource(ShareGroupSnapshotController())
+    return wsgi.Resource(ShareGroupReplicaController())

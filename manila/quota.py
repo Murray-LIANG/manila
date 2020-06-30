@@ -58,6 +58,9 @@ quota_opts = [
     cfg.IntOpt('quota_share_group_snapshots',
                default=50,
                help='Number of share group snapshots allowed.'),
+    cfg.IntOpt('quota_share_group_replicas',
+               default=50,
+               help='Number of share group replicas allowed.'),
 
     cfg.IntOpt('reservation_expire',
                default=86400,
@@ -1065,6 +1068,8 @@ resources = [
                        'quota_share_groups'),
     ReservableResource('share_group_snapshots', '_sync_share_group_snapshots',
                        'quota_share_group_snapshots'),
+    ReservableResource('share_group_replicas', '_sync_share_group_replicas',
+                       'quota_share_group_replicas'),
     ReservableResource('share_replicas', '_sync_share_replicas',
                        'quota_share_replicas'),
     ReservableResource('replica_gigabytes', '_sync_replica_gigabytes',

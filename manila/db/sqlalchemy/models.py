@@ -196,8 +196,7 @@ class Share(BASE, ManilaBase):
     __tablename__ = 'shares'
     _extra_keys = ['name', 'export_location', 'export_locations', 'status',
                    'host', 'share_server_id', 'share_network_id',
-                   'availability_zone', 'access_rules_status', 'share_type_id',
-                   'share_group_instance_id']
+                   'availability_zone', 'access_rules_status', 'share_type_id']
 
     @property
     def name(self):
@@ -236,8 +235,7 @@ class Share(BASE, ManilaBase):
     def __getattr__(self, item):
         proxified_properties = ('status', 'host', 'share_server_id',
                                 'share_network_id', 'availability_zone',
-                                'share_type_id', 'share_type',
-                                'share_group_instance_id')
+                                'share_type_id', 'share_type')
 
         if item in proxified_properties:
             return getattr(self.instance, item, None)
@@ -317,6 +315,9 @@ class Share(BASE, ManilaBase):
     mount_snapshot_support = Column(Boolean, default=False)
     share_proto = Column(String(255))
     is_public = Column(Boolean, default=False)
+    share_group_id = Column(String(36),
+                            ForeignKey('share_groups.id'),
+                            nullable=True)
 
     source_share_group_snapshot_member_id = Column(String(36), nullable=True)
     task_state = Column(String(255))
@@ -341,7 +342,7 @@ class ShareInstance(BASE, ManilaBase):
     _proxified_properties = ('user_id', 'project_id', 'size',
                              'display_name', 'display_description',
                              'snapshot_id', 'share_proto', 'is_public',
-                             'replication_type',
+                             'share_group_id', 'replication_type',
                              'source_share_group_snapshot_member_id',
                              'mount_snapshot_support')
 
@@ -367,9 +368,11 @@ class ShareInstance(BASE, ManilaBase):
     share_id = Column(String(36), ForeignKey('shares.id'))
     deleted = Column(String(36), default='False')
     host = Column(String(255))
-    share_group_instance_id = Column(String(36),
-                                     ForeignKey('share_group_instances.id'),
-                                     nullable=True)
+    share_group_instance_id = Column(
+        String(36),
+        ForeignKey('share_group_instances.id',
+                   name='fk_si_share_group_instance_id'),
+        nullable=True)
     status = Column(String(255))
     progress = Column(String(32))
 
@@ -428,6 +431,16 @@ class ShareInstance(BASE, ManilaBase):
         primaryjoin='and_('
                     'ShareInstance.share_type_id == ShareTypes.id, '
                     'ShareTypes.deleted == "False")')
+    share_group_instance = orm.relationship(
+        "ShareGroupInstance",
+        lazy="immediate",
+        foreign_keys=share_group_instance_id,
+        backref="share_group_replica_members",
+        primaryjoin=('ShareGroupInstance.id == '
+                     'ShareInstance.share_group_instance_id'),
+        viewonly=True,
+        join_depth=2,
+    )
 
 
 class ShareInstanceExportLocations(BASE, ManilaBase):
@@ -777,7 +790,7 @@ class ShareSnapshotInstance(BASE, ManilaBase):
     provider_location = Column(String(255))
     share_proto = Column(String(255))
     instance_size = Column('size', Integer)
-    share_group_snapshot_id = Column(String(36), nullable=True)
+    share_group_snapshot_instance_id = Column(String(36), nullable=True)
     user_id = Column(String(255))
     project_id = Column(String(255))
 
@@ -812,13 +825,13 @@ class ShareSnapshotInstance(BASE, ManilaBase):
         viewonly=True,
         join_depth=2,
     )
-    share_group_snapshot = orm.relationship(
-        "ShareGroupSnapshot",
+    share_group_snapshot_instance = orm.relationship(
+        "ShareGroupSnapshotInstance",
         lazy="immediate",
-        foreign_keys=share_group_snapshot_id,
+        foreign_keys=share_group_snapshot_instance_id,
         backref="share_group_snapshot_members",
-        primaryjoin=('ShareGroupSnapshot.id == '
-                     'ShareSnapshotInstance.share_group_snapshot_id'),
+        primaryjoin=('ShareGroupSnapshotInstance.id == '
+                     'ShareSnapshotInstance.share_group_snapshot_instance_id'),
         viewonly=True,
         join_depth=2,
     )
@@ -1134,12 +1147,13 @@ class ShareGroup(BASE, ManilaBase):
     __tablename__ = 'share_groups'
     _extra_keys = ['status', 'host', 'share_server_id', 'share_network_id',
                    'availability_zone', 'share_group_type_id',
-                   'share_group_type']
+                   'share_group_type', 'source_share_group_snapshot_id']
 
     def __getattr__(self, item):
         proxified_properties = ('status', 'host', 'share_server_id',
                                 'share_network_id', 'availability_zone',
-                                'share_group_type_id', 'share_group_type')
+                                'share_group_type_id', 'share_group_type',
+                                'source_share_group_snapshot_id')
 
         if item in proxified_properties:
             return getattr(self.instance, item, None)
@@ -1152,9 +1166,9 @@ class ShareGroup(BASE, ManilaBase):
     deleted = Column(String(36), default='False')
     name = Column(String(255))
     description = Column(String(255))
-    source_share_group_snapshot_id = Column(String(36))
     consistent_snapshot_support = Column(Enum('pool', 'host'), default=None)
-    group_replication_type = Column(String(255), nullable=True)
+    group_replication_type = Column(Enum('writable', 'readable', 'dr'),
+                                    default=None)
 
     instances = orm.relationship(
         'ShareGroupInstance',
@@ -1211,7 +1225,6 @@ class ShareGroupInstance(BASE, ManilaBase):
     _extra_keys = ['availability_zone']
 
     _proxified_properties = ['user_id', 'project_id', 'name', 'description',
-                             'source_share_group_snapshot_id',
                              'consistent_snapshot_support']
 
     def set_share_group_data(self, share_group):
@@ -1220,17 +1233,30 @@ class ShareGroupInstance(BASE, ManilaBase):
 
     id = Column(String(36), primary_key=True)
     availability_zone_id = Column(
-        String(36), ForeignKey('availability_zones.id'), nullable=True)
+        String(36),
+        ForeignKey('availability_zones.id',
+                   name='fk_sgi_availability_zone_id'),
+        nullable=True)
     deleted = Column(String(36), default='False')
     host = Column(String(255))
+    progress = Column(String(32))
     replica_state = Column(String(255), nullable=True)
-    share_group_id = Column(String(36), ForeignKey('share_groups.id'))
+    share_group_id = Column(String(36),
+                            ForeignKey('share_groups.id',
+                                       name='fk_sgi_share_group_id'))
     share_group_type_id = Column(
-        String(36), ForeignKey('share_group_types.id'), nullable=True)
+        String(36),
+        ForeignKey('share_group_types.id', name='fk_sgi_share_group_type_id'),
+        nullable=True)
     share_network_id = Column(
-        String(36), ForeignKey('share_networks.id'), nullable=True)
+        String(36),
+        ForeignKey('share_networks.id', name='fk_sgi_share_network_id'),
+        nullable=True)
     share_server_id = Column(
-        String(36), ForeignKey('share_servers.id'), nullable=True)
+        String(36),
+        ForeignKey('share_servers.id', name='fk_sgi_share_server_id'),
+        nullable=True)
+    source_share_group_snapshot_id = Column(String(36))
     status = Column(String(255))
 
     share_group_type = orm.relationship(
@@ -1299,14 +1325,23 @@ class ShareGroupTypeSpecs(BASE, ManilaBase):
 class ShareGroupSnapshot(BASE, ManilaBase):
     """Represents a share group snapshot."""
     __tablename__ = 'share_group_snapshots'
+    _extra_keys_ = ['status', 'instance']
+
+    _proxified_properties = ['status']
+
+    def __getattr__(self, item):
+        if item in self._proxified_properties:
+            return getattr(self.instance, item, None)
+
+        raise AttributeError(item)
+
     id = Column(String(36), primary_key=True)
-    share_group_id = Column(String(36), ForeignKey('share_groups.id'))
     user_id = Column(String(255), nullable=False)
     project_id = Column(String(255), nullable=False)
     deleted = Column(String(36), default='False')
     name = Column(String(255))
     description = Column(String(255))
-    status = Column(String(255))
+    share_group_id = Column(String(36), ForeignKey('share_groups.id'))
     share_group = orm.relationship(
         ShareGroup,
         backref=orm.backref("snapshots", lazy='joined'),
@@ -1315,6 +1350,70 @@ class ShareGroupSnapshot(BASE, ManilaBase):
                      'ShareGroupSnapshot.share_group_id == ShareGroup.id,'
                      'ShareGroupSnapshot.deleted == "False")')
     )
+
+    @property
+    def instance(self):
+        if len(self.instances) == 0:
+            return None
+
+        def is_active_group_replica(group_instance):
+            preferred_statuses = (constants.REPLICA_STATE_ACTIVE,)
+            return group_instance['replica_state'] in preferred_statuses
+
+        active_snapshots = list(filter(
+            lambda group_snapshot_instance: is_active_group_replica(
+                group_snapshot_instance.share_group_instance),
+            self.instances))
+
+        snapshot_instances = active_snapshots or self.instances
+        return snapshot_instances[0]
+
+
+class ShareGroupSnapshotInstance(BASE, ManilaBase):
+    """Represents a share group snapshot instance."""
+    __tablename__ = 'share_group_snapshot_instances'
+    _extra_keys_ = ['name', 'description']
+
+    _proxified_properties = ['name', 'description']
+
+    def set_share_group_snapshot_data(self, share_group_snapshot):
+        for sgs_property in self._proxified_properties:
+            setattr(self, sgs_property, share_group_snapshot[sgs_property])
+
+    id = Column(String(36), primary_key=True)
+    deleted = Column(String(36), default='False')
+    share_group_instance_id = Column(
+        String(36),
+        ForeignKey('share_group_instances.id',
+                   name='fk_sgsi_share_group_instance_id'))
+    share_group_instance = orm.relationship(
+        ShareGroupInstance,
+        backref=orm.backref("snapshots", lazy='joined'),
+        foreign_keys=share_group_instance_id,
+        primaryjoin=('and_('
+                     'ShareGroupSnapshotInstance.share_group_instance_id'
+                     ' == ShareGroupInstance.id,'
+                     'ShareGroupSnapshotInstance.deleted == "False")')
+    )
+    share_group_snapshot_id = Column(
+        String(36),
+        ForeignKey('share_group_snapshots.id',
+                   name='fk_sgsi_share_group_snapshot_id'))
+    share_group_snapshot = orm.relationship(
+        ShareGroupSnapshot,
+        backref='instances',
+        lazy='immediate',
+        foreign_keys=share_group_snapshot_id,
+        primaryjoin=(
+            'and_('
+            'ShareGroupSnapshot.id '
+            '== ShareGroupSnapshotInstance.share_group_snapshot_id, '
+            'ShareGroupSnapshotInstance.deleted == "False")'
+        ),
+        viewonly=True,
+        join_depth=2,
+    )
+    status = Column(String(255))
 
 
 class ShareGroupTypeShareTypeMapping(BASE, ManilaBase):

@@ -921,7 +921,7 @@ class ShareDriver(object):
         :param share_servers: list with share-server models
         :param share:  share model
         :param snapshot: snapshot model
-        :param share_group: ShareGroup model with shares
+        :param share_group: ShareGroupInstance model with shares
         :returns: share-server or None
         """
         # If creating in a share group, use its share server
@@ -935,7 +935,7 @@ class ShareDriver(object):
         return share_servers[0] if share_servers else None
 
     def choose_share_server_compatible_with_share_group(
-            self, context, share_servers, share_group_ref,
+            self, context, share_servers, share_group_instance,
             share_group_snapshot=None):
 
         return share_servers[0] if share_servers else None
@@ -1262,6 +1262,31 @@ class ShareDriver(object):
             self.snapshots_are_supported
         )
 
+    @property
+    def share_replication_is_supported(self):
+        """Whether or not share replication is supported."""
+        if not hasattr(self, '_share_replication_is_supported'):
+            methods = ('create_replica', 'delete_replica')
+            # NOTE(RyanLiang): calculate default value for
+            # stat 'share_replication_support' based on implementation of
+            # appropriate methods of this base driver class.
+            self._share_replication_is_supported = (
+                self._has_redefined_driver_methods(methods))
+        return self._share_replication_is_supported
+
+    @property
+    def share_group_replication_is_supported(self):
+        """Whether or not share group replication is supported."""
+        if not hasattr(self, '_share_group_replication_is_supported'):
+            methods = ('create_share_group_replica',
+                       'delete_share_group_replica')
+            # NOTE(RyanLiang): calculate default value for
+            # stat 'share_group_replication_support' based on implementation of
+            # appropriate methods of this base driver class.
+            self._share_group_replication_is_supported = (
+                self._has_redefined_driver_methods(methods))
+        return self._share_group_replication_is_supported
+
     def _update_share_stats(self, data=None):
         """Retrieve stats info from share group.
 
@@ -1294,6 +1319,7 @@ class ShareDriver(object):
             replication_domain=self.replication_domain,
             filter_function=self.get_filter_function(),
             goodness_function=self.get_goodness_function(),
+            share_replication_support=self.share_replication_is_supported,
         )
         if isinstance(data, dict):
             common.update(data)
@@ -1699,6 +1725,515 @@ class ShareDriver(object):
                 context, share_snapshot, share_server=share_server)
 
         LOG.debug('Deleted share group snapshot %s.', snap_dict['id'])
+        return None, None
+
+    def create_share_group_replica(self, context,
+                                   new_group_replica, group_replicas,
+                                   new_share_replicas, share_replicas_dict,
+                                   share_access_rules_dict,
+                                   share_replicas_snapshots_dict,
+                                   share_server=None):
+        """Creates a share group replica.
+
+        .. note::
+            This call is made on the host that hosts the replica being
+            created.
+
+        :param context: Current context.
+        :param new_group_replica: Dictionary of the share group replica
+            being created.
+
+        Example::
+
+            [
+                {
+                    'id': 'e82ff8b6-65f0-11e5-9d70-feff819cdc9f',
+                    # TODO(RyanLiang): add real example here.
+                }
+            ]
+
+        :param group_replicas: List of all replicas for a particular share
+            group.
+            This list also contains the replica to be created. The 'active'
+            replica will have its 'replica_state' attr set to 'active'.
+
+        Example::
+
+            [
+                {
+                    'id': 'd487b88d-e428-4230-a465-a800c2cce5f8',
+                    # TODO(RyanLiang): add real example here.
+                },
+                {
+                    'id': '10e49c3e-aca9-483b-8c2d-1c337b38d6af',
+                },
+                ...
+            ]
+
+        :param new_share_replicas: List of all replicas for shares which
+            are members of the group replica being created.
+
+        Example::
+
+            {
+                'id': 'e82ff8b6-65f0-11e5-9d70-feff819cdc9f',
+                # TODO(RyanLiang): add real example here.
+            }
+
+        :param share_replicas_dict: Dict for mappings of share replica and
+            its full list of replicas. Every share replica in the keys should
+            be a member of ``new_share_replicas``.
+
+        Example::
+
+            {
+                'share-replica-id-a':
+                [
+                    {
+                    # share replica
+                    'id': '89dafd00-0999-4d23-8614-13eaa6b02a3b',
+                    # TODO(RyanLiang): add real example here.
+                    'snapshot_id': '3ce1caf7-0945-45fd-a320-714973e949d3',
+                    'status: 'available',
+                    'share_instance_id': 'e82ff8b6-65f0-11e5-9d70-feff819cdc9f'
+                        ...
+                    },
+                    {
+                    'id': '8bda791c-7bb6-4e7b-9b64-fefff85ff13e',
+                    'snapshot_id': '13ee5cb5-fc53-4539-9431-d983b56c5c40',
+                    'status: 'deleting',
+                    'share_instance_id': 'e82ff8b6-65f0-11e5-9d70-feff819cdc9f'
+                        ...
+                    },
+                    ...
+                ],
+                'share-replica-id-b':
+                [
+                    {
+                    # share replica
+                    'id': '89dafd00-0999-4d23-8614-13eaa6b02a3b',
+                    # TODO(RyanLiang): add real example here.
+                    'snapshot_id': '3ce1caf7-0945-45fd-a320-714973e949d3',
+                    'status: 'available',
+                    'share_instance_id': 'e82ff8b6-65f0-11e5-9d70-feff819cdc9f'
+                        ...
+                    },
+                    {
+                    'id': '8bda791c-7bb6-4e7b-9b64-fefff85ff13e',
+                    'snapshot_id': '13ee5cb5-fc53-4539-9431-d983b56c5c40',
+                    'status: 'deleting',
+                    'share_instance_id': 'e82ff8b6-65f0-11e5-9d70-feff819cdc9f'
+                        ...
+                    },
+                    ...
+                ]
+            }
+
+        :param share_access_rules_dict: Dict for mappings of share replica and
+            its list of access rules. Every share replica in the keys
+            should be a member of ``new_share_replicas``.
+            These are rules that other instances of the share already obey.
+            Drivers are expected to apply access rules to the new replicas or
+            disregard access rules that don't apply.
+
+        Example::
+
+            {
+                'share-replica-id-a':
+                [
+                    {
+                        'id': 'f0875f6f-766b-4865-8b41-cccb4cdf1676',
+                        'deleted' = False,
+                        'share_id' = 'f0e4bb5e-65f0-11e5-9d70-feff819cdc9f',
+                        'access_type' = 'ip',
+                        'access_to' = '172.16.20.1',
+                        'access_level' = 'rw',
+                    }
+                ],
+                'share-replica-id-b':
+                [
+                    {
+                        TODO(RyanLiang): get another access rule example.
+                        'id': 'f0875f6f-766b-4865-8b41-cccb4cdf1676',
+                        'deleted' = False,
+                        'share_id' = 'f0e4bb5e-65f0-11e5-9d70-feff819cdc9f',
+                        'access_type' = 'ip',
+                        'access_to' = '172.16.20.1',
+                        'access_level' = 'rw',
+                    }
+                ]
+            }
+
+        :param share_replicas_snapshots_dict: Dict for mappings of share
+            replica and its list of snapshot instances. Every share replica in
+            the keys should be a member of ``new_share_replicas``.
+            This includes snapshot instances of every snapshot of the share
+            whose 'aggregate_status' property was reported to be 'available'
+            when the share manager initiated this request. Each list member
+            will have two sub dictionaries: 'active_replica_snapshot' and
+            'share_replica_snapshot'. The 'active' replica snapshot corresponds
+            to the instance of the snapshot on any of the 'active' replicas of
+            the share while share_replica_snapshot corresponds to the snapshot
+            instance for the specific replica that will need to exist on the
+            new share replica that is being created. The driver needs to ensure
+            that this snapshot instance is truly available before transitioning
+            the replica from 'out_of_sync' to 'in_sync'. Snapshots instances
+            for snapshots that have an 'aggregate_status' of 'creating' or
+            'deleting' will be polled for in the ``update_replicated_snapshot``
+            method.
+
+        Example::
+
+            {
+                'share-replica-id-a':
+                [
+                    {
+                    'active_replica_snapshot':
+                        {
+                        'id': '8bda791c-7bb6-4e7b-9b64-fefff85ff13e',
+                        'share_instance_id':
+                            '10e49c3e-aca9-483b-8c2d-1c337b38d6af',
+                        'status': 'available',
+                        'provider_location':
+                            '/newton/share-snapshot-10e49c3e-aca9',
+                        ...
+                        },
+                    'share_replica_snapshot':
+                        {
+                        'id': '',
+                        'share_instance_id':
+                            'e82ff8b6-65f0-11e5-9d70-feff819cdc9f',
+                        'status': 'available',
+                        'provider_location': None,
+                        ...
+                        },
+                    },
+                    ...
+                ],
+                'share-replica-id-b':
+                [
+                    {
+                    'active_replica_snapshot':
+                        {
+                        'id': '8bda791c-7bb6-4e7b-9b64-fefff85ff13e',
+                        'share_instance_id':
+                            '10e49c3e-aca9-483b-8c2d-1c337b38d6af',
+                        'status': 'available',
+                        'provider_location':
+                            '/newton/share-snapshot-10e49c3e-aca9',
+                        ...
+                        },
+                    'share_replica_snapshot':
+                        {
+                        'id': '',
+                        'share_instance_id':
+                            'e82ff8b6-65f0-11e5-9d70-feff819cdc9f',
+                        'status': 'available',
+                        'provider_location': None,
+                            ...
+                        },
+                    },
+                    ...
+                ]
+            }
+
+        :param share_server: <models.ShareServer> or None
+            Share server of the share group replica being created.
+
+        :return: (share_group_replica_update, share_replicas_update)
+            share_group_replica_update - a dict containing any values to be
+            updated for the share group replica in the database. This value may
+            be None.
+
+            Example::
+
+                {
+                    'replica_state': 'in_sync',
+                    ...
+                }
+
+            share_replicas_update -  a list of dictionaries containing values
+            to be updated for every share replicas as the member of the share
+            group replica. Each dict contains export_locations, replica_state,
+            access_rules_status in the same format as returned during
+            ``create_replica`` call, and the id of share replica to be updated.
+            This list may be empty or None.
+
+            Example::
+
+                {
+                    'id': 'fake_share_replica_id',
+                    'export_locations': [
+                        {
+                            'path': '172.16.20.22/sample/export/path',
+                             'is_admin_only': False,
+                             'metadata': {'some_key': 'some_value'},
+                        },
+                    ],
+                     'replica_state': 'in_sync',
+                     'access_rules_status': 'in_sync',
+                }
+
+        :raises: Exception.
+            Any exception raised will set the share group replica's 'status'
+            and 'replica_state' attributes to 'error'. It will not affect
+            snapshots belonging to this replica.
+        """
+
+        LOG.debug('Creating a share group replica %s.',
+                  new_group_replica['id'])
+
+        if not self._stats.get('share_replication_support'):
+            raise exception.ShareReplicationNotSupported()
+
+        if not new_share_replicas:
+            LOG.info('No shares in share group to create replica.')
+            return None, None
+
+        share_replicas_done = []
+        share_replicas_update = {}
+
+        for share_replica in new_share_replicas:
+            share_replica_id = share_replica['id']
+
+            try:
+                update = self.create_replica(
+                    context, share_replicas_dict[share_replica_id],
+                    share_replica, share_access_rules_dict[share_replica_id],
+                    share_replicas_snapshots_dict[share_replica_id])
+                share_replicas_done.append(share_replica)
+                if update:
+                    share_replicas_update[share_replica_id] = update
+            except exception.ManilaException:
+                msg = ('Could not create share group replica '
+                       '%(group_replica)s. Failed to create share replica '
+                       '%(replica)s for share %(share)s.')
+                LOG.exception(msg, {
+                    'group_replica': new_group_replica['id'],
+                    'replica': share_replica_id,
+                    'share': share_replica['share_id']
+                })
+
+                # Clean up any share replicas has done creation previously.
+                LOG.debug(
+                    'Attempting to clean up share replicas due to failure.')
+                for share_replica in share_replicas_done:
+                    share_replica_id = share_replica['id']
+                    share_replica_snapshots = list(filter(None, [
+                        snapshot.get('share_replica_snapshot')
+                        for snapshots
+                        in share_replicas_snapshots_dict[share_replica_id]
+                        for snapshot in snapshots
+                    ]))
+                    try:
+                        self.delete_replica(
+                            context, share_replicas_dict[share_replica_id],
+                            share_replica_snapshots,
+                            share_replica,
+                            share_server=share_server
+                        )
+                    except exception.ManilaException:
+                        msg = ('Cannot clean up share replica %(replica)s '
+                               'during failure handling for share group '
+                               'replica %(group_replica)s creation.')
+                        LOG.error(msg, {
+                            'replica': share_replica_id,
+                            'group_replica': new_group_replica['id'],
+                        })
+                        raise
+                raise
+
+            LOG.debug('Successfully created share group replica %s.',
+                      new_group_replica['id'])
+            return None, share_replicas_update
+
+    def delete_share_group_replica(self, context,
+                                   deleting_group_replica, group_replicas,
+                                   deleting_share_replicas,
+                                   share_replicas_dict,
+                                   share_replicas_snapshots,
+                                   share_server=None):
+        """Deletes a share group replica.
+
+        .. note::
+            This call is made on the host that hosts the replica being
+            deleted.
+
+        :param context: Current context.
+        :param deleting_group_replica: Dictionary of the share group replica
+            being deleted.
+
+        Example::
+
+            [
+                {
+                    'id': 'e82ff8b6-65f0-11e5-9d70-feff819cdc9f',
+                    # TODO(RyanLiang): add real example here.
+                }
+            ]
+
+        :param group_replicas: List of all replicas for a particular share
+            group.
+            This list also contains the replica to be deleted. The 'active'
+            replica will have its 'replica_state' attr set to 'active'.
+
+        Example::
+
+            [
+                {
+                    'id': 'd487b88d-e428-4230-a465-a800c2cce5f8',
+                    # TODO(RyanLiang): add real example here.
+                },
+                {
+                    'id': '10e49c3e-aca9-483b-8c2d-1c337b38d6af',
+                },
+                ...
+            ]
+
+        :param deleting_share_replicas: List of all replicas for shares which
+            are members of the group replica being deleted.
+
+        Example::
+
+            {
+                'id': 'e82ff8b6-65f0-11e5-9d70-feff819cdc9f',
+                # TODO(RyanLiang): add real example here.
+            }
+
+        :param share_replicas_dict: Dict for mappings of share replica and
+            its full list of replicas. Every share replica should be a
+            member of ``deleting_share_replicas``.
+
+        Example::
+
+            {
+                'share-replica-id-a':
+                [
+                    {
+                    # share replica
+                    'id': '89dafd00-0999-4d23-8614-13eaa6b02a3b',
+                    # TODO(RyanLiang): add real example here.
+                    'snapshot_id': '3ce1caf7-0945-45fd-a320-714973e949d3',
+                    'status: 'available',
+                    'share_instance_id': 'e82ff8b6-65f0-11e5-9d70-feff819cdc9f'
+                        ...
+                    },
+                    {
+                    'id': '8bda791c-7bb6-4e7b-9b64-fefff85ff13e',
+                    'snapshot_id': '13ee5cb5-fc53-4539-9431-d983b56c5c40',
+                    'status: 'creating',
+                    'share_instance_id': 'e82ff8b6-65f0-11e5-9d70-feff819cdc9f'
+                        ...
+                    },
+                    ...
+                ],
+                'share-replica-id-b':
+                [
+                    {
+                    # share replica
+                    'id': '89dafd00-0999-4d23-8614-13eaa6b02a3b',
+                    # TODO(RyanLiang): add real example here.
+                    'snapshot_id': '3ce1caf7-0945-45fd-a320-714973e949d3',
+                    'status: 'available',
+                    'share_instance_id': 'e82ff8b6-65f0-11e5-9d70-feff819cdc9f'
+                        ...
+                    },
+                    {
+                    'id': '8bda791c-7bb6-4e7b-9b64-fefff85ff13e',
+                    'snapshot_id': '13ee5cb5-fc53-4539-9431-d983b56c5c40',
+                    'status: 'creating',
+                    'share_instance_id': 'e82ff8b6-65f0-11e5-9d70-feff819cdc9f'
+                        ...
+                    },
+                    ...
+                ]
+            }
+
+
+        :param share_replicas_snapshots: Dict for mappings of share replica and
+            its list of snapshot instances. Every share replica should be a
+            member of ``deleting_share_replicas``.
+            The list contains snapshot instances that are associated with the
+            share replicas in the share group replica being deleted.
+            No model updates to snapshot instances are possible in this method.
+            The driver should return when the cleanup is completed on the
+            backend for both, the snapshots and the replica itself. Drivers
+            must handle situations where the snapshot may not yet have
+            finished 'creating' on this replica.
+
+        Example::
+
+            {
+                'share-replica-id-a':
+                [
+                    {
+                    # snapshot instance
+                    'id': '89dafd00-0999-4d23-8614-13eaa6b02a3b',
+                    # TODO(RyanLiang): add real example here.
+                    'snapshot_id': '3ce1caf7-0945-45fd-a320-714973e949d3',
+                    'status: 'available',
+                    'share_instance_id': 'e82ff8b6-65f0-11e5-9d70-feff819cdc9f'
+                        ...
+                    },
+                    {
+                    'id': '8bda791c-7bb6-4e7b-9b64-fefff85ff13e',
+                    'snapshot_id': '13ee5cb5-fc53-4539-9431-d983b56c5c40',
+                    'status: 'creating',
+                    'share_instance_id': 'e82ff8b6-65f0-11e5-9d70-feff819cdc9f'
+                        ...
+                    },
+                    ...
+                ],
+                'share-replica-id-b':
+                [
+                    {
+                    # snapshot instance
+                    'id': '89dafd00-0999-4d23-8614-13eaa6b02a3b',
+                    # TODO(RyanLiang): add real example here.
+                    'snapshot_id': '3ce1caf7-0945-45fd-a320-714973e949d3',
+                    'status: 'available',
+                    'share_instance_id': 'e82ff8b6-65f0-11e5-9d70-feff819cdc9f'
+                        ...
+                    },
+                    {
+                    'id': '8bda791c-7bb6-4e7b-9b64-fefff85ff13e',
+                    'snapshot_id': '13ee5cb5-fc53-4539-9431-d983b56c5c40',
+                    'status: 'creating',
+                    'share_instance_id': 'e82ff8b6-65f0-11e5-9d70-feff819cdc9f'
+                        ...
+                    },
+                    ...
+                ]
+            }
+
+        :param share_server: <models.ShareServer> or None
+            Share server of the share group replica being deleted.
+
+        :return: (share_group_replica_update, share_replicas_update)
+            share_group_replica_update - a dict containing any values to be
+            updated for the ShareGroupReplica in the database. This value may
+            be None.
+            share_replicas_update -  a list of dictionaries containing values
+            to be updated for every share replicas as the member of the share
+            group replica. Each dict contains any values to be updated for the
+            ShareReplica in the database. This list may be empty or None.
+        :raises: Exception.
+            Any exception raised will set the share group replica's 'status'
+            attributes to 'error_deleting' and 'replica_state' to 'error'. It
+            will not affect snapshots belonging to this replica.
+        """
+        LOG.debug('Deleting share group replica %s.',
+                  deleting_group_replica['id'])
+
+        for replica in deleting_share_replicas:
+            self.delete_replica(
+                context, share_replicas_dict[replica['id']],
+                share_replicas_snapshots[replica['id']],
+                replica,
+                share_server=share_server)
+
+        LOG.debug('Deleted share group replica %s.',
+                  deleting_group_replica['id'])
         return None, None
 
     def _collate_share_group_snapshot_info(self, share_group_dict,
