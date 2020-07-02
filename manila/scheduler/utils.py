@@ -49,6 +49,8 @@ def generate_stats(host_state, properties):
         'mount_snapshot_support': host_state.mount_snapshot_support,
         'replication_domain': host_state.replication_domain,
         'replication_type': host_state.replication_type,
+        'group_replication_domain': host_state.group_replication_domain,
+        'group_replication_type': host_state.group_replication_type,
         'provisioned_capacity_gb': host_state.provisioned_capacity_gb,
         'pools': host_state.pools,
         'max_over_subscription_ratio':

@@ -41,11 +41,11 @@ class SchedulerAPI(object):
         1.7 - Updated migrate_share_to_host method with new parameters
         1.8 - Rename create_consistency_group -> create_share_group method
         1.9 - Add cached parameter to get_pools method
-        2.0 - Add create_share_group_replica,
+        1.10 - Add create_share_group_replica,
             rename create_share_group to create_share_group_instance.
     """
 
-    RPC_API_VERSION = '2.0'
+    RPC_API_VERSION = '1.10'
 
     def __init__(self):
         super(SchedulerAPI, self).__init__()
@@ -97,7 +97,7 @@ class SchedulerAPI(object):
 
         """
         request_spec_p = jsonutils.to_primitive(request_spec)
-        call_context = self.client.prepare(version='2.0')
+        call_context = self.client.prepare(version='1.10')
         return call_context.cast(context,
                                  'create_share_group_instance',
                                  request_spec=request_spec_p,
@@ -147,7 +147,7 @@ class SchedulerAPI(object):
     def create_share_group_replica(self, context, request_spec=None,
                                    filter_properties=None):
         request_spec_p = jsonutils.to_primitive(request_spec)
-        call_context = self.client.prepare(version='2.0')
+        call_context = self.client.prepare(version='1.10')
         return call_context.cast(context,
                                  'create_share_group_replica',
                                  request_spec=request_spec_p,

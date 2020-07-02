@@ -277,7 +277,17 @@ class EMCShareDriver(driver.ShareDriver):
             storage_protocol='NFS_CIFS',
             snapshot_support=True,
             create_share_from_snapshot_support=True,
-            revert_to_snapshot_support=self.revert_to_snap_support)
+            revert_to_snapshot_support=self.revert_to_snap_support,
+            replication_type=None,
+            share_group_stats=dict(
+                consistent_snapshot_support=False,
+                group_replication_type=None,
+            )
+        )
+
+        # NOTE(RyanLiang): replication_domain/group_replication_domain will be
+        # updated by base's _update_share_stats. Plugins need to report
+        # replication_type/group_replication_type by themselves.
         self.plugin.update_share_stats(data)
         super(EMCShareDriver, self)._update_share_stats(data)
 

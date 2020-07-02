@@ -184,6 +184,7 @@ def _create_share_group_snapshot_instances_table(connection):
 def _use_share_group_snapshot_instance_id_in_share_snapshot_instances():
     op.alter_column('share_snapshot_instances',
                     'share_group_snapshot_id',
+                    existing_type=sa.String(36),
                     new_column_name='share_group_snapshot_instance_id')
 
 
@@ -308,6 +309,7 @@ def _remove_share_group_snapshot_instances_table(connection):
 def _use_share_group_snapshot_id_in_share_snapshot_instances():
     op.alter_column('share_snapshot_instances',
                     'share_group_snapshot_instance_id',
+                    existing_type=sa.String(36),
                     new_column_name='share_group_snapshot_id')
 
 

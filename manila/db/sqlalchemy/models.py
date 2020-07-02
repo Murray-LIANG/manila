@@ -1172,7 +1172,7 @@ class ShareGroup(BASE, ManilaBase):
 
     instances = orm.relationship(
         'ShareGroupInstance',
-        lazy='immediate',
+        lazy='subquery',
         primaryjoin=(
             'and_('
             'ShareGroup.id == ShareGroupInstance.share_group_id, '
@@ -1262,11 +1262,12 @@ class ShareGroupInstance(BASE, ManilaBase):
     share_group_type = orm.relationship(
         ShareGroupTypes,
         backref="share_group_instance",
+        lazy='immediate',
         foreign_keys=share_group_type_id,
         primaryjoin="and_("
                     "ShareGroupInstance.share_group_type_id =="
                     "ShareGroupTypes.id,"
-                    "ShareGroup.deleted == 'False')")
+                    "ShareGroupInstance.deleted == 'False')")
     _availability_zone = orm.relationship(
         "AvailabilityZone",
         lazy='immediate',

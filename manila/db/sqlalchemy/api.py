@@ -1938,9 +1938,8 @@ def _share_get_all_with_filters(context, project_id=None, share_server_id=None,
             models.ShareInstance.share_server_id == share_server_id)
 
     if share_group_id:
-        share_group = _share_group_get(context, share_group_id)
         query = query.filter(
-            models.Share.share_group_instance_id == share_group.instance['id'])
+            models.Share.share_group_id == share_group_id)
 
     # Apply filters
     if not filters:
@@ -4702,7 +4701,7 @@ def share_group_create(context, values, create_share_group_instance=True):
                                      session, strict=False)
     with session.begin():
         share_group.update(share_group_values)
-        session.add(share_group)
+        share_group.save(session)
 
         if create_share_group_instance:
             _share_group_instance_create(context, share_group['id'],
@@ -4752,20 +4751,18 @@ def share_group_destroy(context, share_group_id):
 @require_context
 def count_shares_in_share_group(context, share_group_id, session=None):
     session = session or get_session()
-    share_group = _share_group_get(context, share_group_id, session=session)
     return (model_query(context, models.Share, session=session,
                         project_only=True, read_deleted="no").
-            filter_by(share_group_instance_id=share_group.instance['id']).
+            filter_by(share_group_id=share_group_id).
             count())
 
 
 @require_context
 def get_all_shares_by_share_group(context, share_group_id, session=None):
     session = session or get_session()
-    share_group = _share_group_get(context, share_group_id, session=session)
     return (model_query(context, models.Share, session=session,
                         project_only=True, read_deleted="no").
-            filter_by(share_group_instance_id=share_group.instance['id']).
+            filter_by(share_group_id=share_group_id).
             all())
 
 
@@ -4796,7 +4793,7 @@ def share_group_instance_get(context, share_group_instance_id,
     ).filter_by(
         id=share_group_instance_id
     ).options(
-        joinedload('share_group_types')
+        joinedload('share_group_type')
     ).first()
 
     if not result:
@@ -4876,7 +4873,7 @@ def share_group_instance_delete(context, share_group_instance_id,
                                 session=None):
     session = session or get_session()
     with session.begin():
-        share_group_instance = share_instance_get(
+        share_group_instance = share_group_instance_get(
             context, share_group_instance_id, session=session
         )
         share_group_instance.soft_delete(session, update_status=True)
@@ -5283,7 +5280,7 @@ def share_group_snapshot_create(context, values,
     session = get_session()
     with session.begin():
         share_group_snapshot.update(group_snapshot_values)
-        session.add(share_group_snapshot)
+        share_group_snapshot.save(session)
 
         if create_share_group_snapshot_instance:
             share_group_snapshot_instance_create(

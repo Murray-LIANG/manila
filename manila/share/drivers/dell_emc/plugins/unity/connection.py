@@ -590,6 +590,9 @@ class UnityStorageConnection(driver.StorageConnection):
             LOG.error(message)
             raise exception.EMCUnityError(err=message)
 
+        stats_dict['share_group_stats'][
+            'group_replication_type'] = const.GROUP_REPLICATION_TYPE_DR
+
     def get_pool(self, share):
         """Get the pool name of the share."""
         backend_share = self.client.get_share(

@@ -127,6 +127,15 @@ share_opts = [
              "replication between each other. If this option is not "
              "specified in the group, it means that replication is not "
              "enabled on the backend."),
+    # Just like replication_domain while this is for group replication
+    cfg.StrOpt(
+        "group_replication_domain",
+        help="A string specifying the replication domain for share group that "
+             "the backend belongs to. This option needs to be specified the "
+             "same in the configuration sections of all backends that support "
+             "share group replication between each other. If this option is "
+             "not specified in the group, it means that share group "
+             "replication is not enabled on the backend."),
     cfg.StrOpt('backend_availability_zone',
                default=None,
                help='Availability zone for this share backend. If not set, '
@@ -318,6 +327,12 @@ class ShareDriver(object):
         if self.configuration:
             return self.configuration.safe_get('replication_domain')
         return CONF.replication_domain
+
+    @property
+    def group_replication_domain(self):
+        if self.configuration:
+            return self.configuration.safe_get('group_replication_domain')
+        return CONF.group_replication_domain
 
     def _verify_share_server_handling(self, driver_handles_share_servers):
         """Verifies driver_handles_share_servers and given configuration."""
@@ -1324,11 +1339,13 @@ class ShareDriver(object):
         if isinstance(data, dict):
             common.update(data)
 
+        common['share_group_stats'] = dict(
+            consistent_snapshot_support=None,
+            group_replication_type=None,
+            group_replication_domain=self.group_replication_domain,
+        )
         sg_stats = data.get('share_group_stats', {}) if data else {}
-        common['share_group_stats'] = {
-            'consistent_snapshot_support': sg_stats.get(
-                'consistent_snapshot_support'),
-        }
+        common['share_group_stats'].update(sg_stats)
 
         self.add_ip_version_capability(common)
         self._stats = common
