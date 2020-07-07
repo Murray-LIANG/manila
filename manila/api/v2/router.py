@@ -29,7 +29,7 @@ from manila.api.v1 import share_manage
 from manila.api.v1 import share_metadata
 from manila.api.v1 import share_types_extra_specs
 from manila.api.v1 import share_unmanage
-from manila.api.v2 import availability_zones, share_group_replicas
+from manila.api.v2 import availability_zones
 from manila.api.v2 import messages
 from manila.api.v2 import quota_class_sets
 from manila.api.v2 import quota_sets
@@ -37,6 +37,7 @@ from manila.api.v2 import services
 from manila.api.v2 import share_access_metadata
 from manila.api.v2 import share_accesses
 from manila.api.v2 import share_export_locations
+from manila.api.v2 import share_group_replicas
 from manila.api.v2 import share_group_snapshots
 from manila.api.v2 import share_group_type_specs
 from manila.api.v2 import share_group_types
