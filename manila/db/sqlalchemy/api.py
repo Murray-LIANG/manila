@@ -4896,8 +4896,11 @@ def count_share_group_replicas(context, project_id, user_id=None,
         func.count(models.ShareGroupInstance.id),
         read_deleted="no",
         session=session
-    ).filter_by(
-        project_id=project_id
+    ).join(
+        models.ShareGroup,
+        models.ShareGroupInstance.share_group_id == models.ShareGroup.id
+    ).filter(
+        models.ShareGroup.project_id == project_id
     ).filter(models.ShareGroupInstance.replica_state.isnot(None))
     if share_type_id:
         query = query.join(
@@ -5614,7 +5617,8 @@ def share_group_type_destroy(context, type_id):
     with session.begin():
         _share_group_type_get(context, type_id, session)
         results = model_query(
-            context, models.ShareGroup, session=session, read_deleted="no",
+            context, models.ShareGroupInstance,
+            session=session, read_deleted="no",
         ).filter_by(
             share_group_type_id=type_id,
         ).count()

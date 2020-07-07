@@ -29,7 +29,7 @@ from manila.api.v1 import share_manage
 from manila.api.v1 import share_metadata
 from manila.api.v1 import share_types_extra_specs
 from manila.api.v1 import share_unmanage
-from manila.api.v2 import availability_zones
+from manila.api.v2 import availability_zones, share_group_replicas
 from manila.api.v2 import messages
 from manila.api.v2 import quota_class_sets
 from manila.api.v2 import quota_sets
@@ -491,3 +491,12 @@ class APIRouter(manila.api.openstack.APIRouter):
                        controller=access_metadata_controller,
                        action="delete",
                        conditions={"method": ["DELETE"]})
+
+        self.resources['share-group-replicas'] = (
+            share_group_replicas.create_resource())
+        mapper.resource(
+            "share-group-replica",
+            "share-group-replicas",
+            controller=self.resources["share-group-replicas"],
+            collection={"detail": "GET"},
+            member={"members": "GET", "action": "POST"})

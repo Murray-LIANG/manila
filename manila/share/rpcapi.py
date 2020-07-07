@@ -89,7 +89,7 @@ class ShareAPI(object):
         super(ShareAPI, self).__init__()
         target = messaging.Target(topic=CONF.share_topic,
                                   version=self.BASE_RPC_API_VERSION)
-        self.client = rpc.get_client(target, version_cap='1.19')
+        self.client = rpc.get_client(target, version_cap='1.20')
 
     def create_share_instance(self, context, share_instance, host,
                               request_spec, filter_properties,

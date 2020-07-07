@@ -237,7 +237,7 @@ def add_hooks(f):
 class ShareManager(manager.SchedulerDependentManager):
     """Manages NAS storages."""
 
-    RPC_API_VERSION = '1.19'
+    RPC_API_VERSION = '1.20'
 
     def __init__(self, share_driver=None, service_name=None, *args, **kwargs):
         """Load the driver from args, or from flags."""
@@ -4214,8 +4214,9 @@ class ShareManager(manager.SchedulerDependentManager):
                        'share_group_stats'].get('consistent_snapshot_support')}
         if share_group_instance.get('group_replication_type'):
             updates['replica_state'] = constants.REPLICA_STATE_ACTIVE
-        self.db.share_group_update(context, share_group_instance_id, updates,
-                                   with_share_group_data=True)
+        self.db.share_group_instance_update(context, share_group_instance_id,
+                                            updates,
+                                            with_share_group_data=True)
         LOG.info("Share group instance %s: created successfully",
                  share_group_instance_id)
 

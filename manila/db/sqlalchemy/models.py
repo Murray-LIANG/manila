@@ -1146,12 +1146,14 @@ class ShareGroup(BASE, ManilaBase):
     """Represents a share group."""
     __tablename__ = 'share_groups'
     _extra_keys = ['status', 'host', 'share_server_id', 'share_network_id',
-                   'availability_zone', 'share_group_type_id',
-                   'share_group_type', 'source_share_group_snapshot_id']
+                   'availability_zone', 'availability_zone_id',
+                   'share_group_type_id', 'share_group_type',
+                   'source_share_group_snapshot_id']
 
     def __getattr__(self, item):
         proxified_properties = ('status', 'host', 'share_server_id',
-                                'share_network_id', 'availability_zone',
+                                'share_network_id',
+                                'availability_zone', 'availability_zone_id',
                                 'share_group_type_id', 'share_group_type',
                                 'source_share_group_snapshot_id')
 
