@@ -20,6 +20,9 @@ from oslo_utils import units
 
 from manila import exception
 from manila.i18n import _
+from manila.share import configuration
+from manila.share import driver
+from manila.share.drivers.dell_emc.plugins.unity import connection
 
 LOG = log.getLogger(__name__)
 
@@ -115,3 +118,19 @@ def get_snapshot_id(snapshot):
     Take the id from provider_location in case this is managed snapshot.
     """
     return snapshot['provider_location'] or snapshot['id']
+
+
+def get_backend_config(conf, backend_name):
+    config_stanzas = conf.list_all_sections()
+    if backend_name not in config_stanzas:
+        msg = _("Could not find backend stanza %(backend_name)s in "
+                "configuration which is required for share replication and "
+                "migration. Available stanzas are %(stanzas)s")
+        raise exception.BadConfigurationException(
+            reason=msg % {"stanzas": config_stanzas,
+                          "backend_name": backend_name})
+
+    config = configuration.Configuration(driver.share_opts,
+                                         config_group=backend_name)
+    config.append_config_values(connection.UNITY_OPTS)
+    return config

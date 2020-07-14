@@ -32,6 +32,8 @@ from manila.share.drivers.dell_emc.plugins.unity import utils
 
 LOG = log.getLogger(__name__)
 
+NAME_PREFIX_REP_NAS_SERVER = 'OS-DR_'
+
 
 class UnityClient(object):
     def __init__(self, host, username, password):
@@ -353,3 +355,82 @@ class UnityClient(object):
     def restore_snapshot(self, snap_name):
         snap = self.get_snapshot(snap_name)
         return snap.restore(delete_backup=True)
+
+    def get_replication_session(self,
+                                src_resource_id=None, dst_resource_id=None):
+        return self.system.get_replication_session(
+            src_resource_id=src_resource_id, dst_resource_id=dst_resource_id)
+
+    def is_nas_server_in_replication(self, nas_server):
+        """Returns True if the nas server is participating in a replication.
+
+        Only one replication session of nas server can be created per
+        replication connection.
+        The connection inside local Unity is considered as a replication
+        connection.
+        Connections to different remote Unity systems are considered as
+        different replication connections.
+        """
+        pass
+
+    def get_active_nas_server(self, name):
+        """Returns the active nas server.
+
+        For the nas server involved in a local replication, the name of the
+        active nas server could be xxxxxx or OS-DR_xxxxxx.
+        """
+
+        try:
+            nas_server = self.get_nas_server(name)
+            if not nas_server.is_replication_destination:
+                return nas_server
+            else:
+                LOG.debug('Nas server with name %s found but not active.'
+                          % name)
+        except storops_ex.UnityResourceNotFoundError:
+            LOG.debug('Nas server with name %s not found.' % name)
+            pass
+
+        try:
+            dr_name = NAME_PREFIX_REP_NAS_SERVER + name
+            nas_server = self.get_nas_server(dr_name)
+            if not nas_server.is_replication_destination:
+                return nas_server
+            else:
+                msg = ('Nas server with name %{dr_name}s found but not '
+                       'active. Nas server with name %{name}s either not '
+                       'found or not active. Invalid nas servers state.'
+                       ) % {'dr_name': dr_name, 'name': name}
+                LOG.exception(msg)
+                raise exception.EMCUnityError(err=msg)
+        except storops_ex.UnityResourceNotFoundError:
+            msg = ('No active nas server found with name %{name}s or '
+                   '%{dr_name}s.') % {'dr_name': dr_name, 'name': name}
+            LOG.exception(msg)
+            raise exception.EMCUnityError(err=msg)
+
+    def get_serial_number(self):
+        return self.system.serial_number
+
+    def get_remote_system(self, name):
+        return self.system.get_remote_system(name=name)
+
+    def enable_replication(self, dst_client, src_nas_server_name,
+                           dst_pool_name, max_out_of_sync_minutes):
+        """Enables the nas server replication from this client to dst_client.
+
+        dst_client could connect to the same Unity for local replications.
+        """
+
+        active_nas_server = self.get_active_nas_server(src_nas_server_name)
+        dst_pool_id = dst_client.get_pool(name=dst_pool_name).get_id()
+        dst_serial_num = dst_client.get_serial_number()
+        is_local_rep = self.get_serial_number() == dst_serial_num
+        dst_nas_server_name = (NAME_PREFIX_REP_NAS_SERVER + src_nas_server_name
+                               if is_local_rep else src_nas_server_name)
+        remote_system = (None if is_local_rep
+                         else self.get_remote_system(dst_serial_num))
+        return active_nas_server.replicate_with_dst_resource_provisioning(
+            max_out_of_sync_minutes, dst_pool_id,
+            dst_nas_server_name=dst_nas_server_name,
+            remote_system=remote_system)

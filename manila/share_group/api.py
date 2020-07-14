@@ -703,7 +703,7 @@ class API(base.Base):
         share_network_id = share_group['share_network_id']
         share_server_id = share_group['share_server_id']
         cast_rules_to_readonly = (share_group['group_replication_type']
-                                  == constants.REPLICATION_TYPE_READABLE)
+                                  == constants.GROUP_REPLICATION_TYPE_READABLE)
         group_instance_values = {
             'user_id': context.user_id,
             'project_id': context.project_id,

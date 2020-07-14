@@ -951,7 +951,7 @@ class ShareDriver(object):
 
     def choose_share_server_compatible_with_share_group(
             self, context, share_servers, share_group_instance,
-            share_group_snapshot=None):
+            share_group_snapshot=None, share_group_active_replica=None):
 
         return share_servers[0] if share_servers else None
 

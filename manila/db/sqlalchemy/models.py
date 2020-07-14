@@ -1227,7 +1227,8 @@ class ShareGroupInstance(BASE, ManilaBase):
     _extra_keys = ['availability_zone']
 
     _proxified_properties = ['user_id', 'project_id', 'name', 'description',
-                             'consistent_snapshot_support']
+                             'consistent_snapshot_support',
+                             'group_replication_type']
 
     def set_share_group_data(self, share_group):
         for sg_property in self._proxified_properties:

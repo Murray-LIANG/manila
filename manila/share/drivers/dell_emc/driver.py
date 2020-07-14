@@ -134,6 +134,21 @@ class EMCShareDriver(driver.ShareDriver):
         else:
             self.get_share_server_network_info_support = False
 
+        if hasattr(self.plugin,
+                   'choose_share_server_compatible_with_share_group_support'):
+            self.choose_share_server_compatible_with_share_group_support = (
+                self.plugin
+                    .choose_share_server_compatible_with_share_group_support)
+        else:
+            self.choose_share_server_compatible_with_share_group_support = (
+                False)
+
+        if hasattr(self.plugin, 'share_group_replication_support'):
+            self.share_group_replication_support = (
+                self.plugin.share_group_replication_support)
+        else:
+            self.share_group_replication_support = False
+
     def manage_existing(self, share, driver_options):
         """manage an existing share"""
         if self.manage_existing_support:
@@ -318,3 +333,37 @@ class EMCShareDriver(driver.ShareDriver):
                                                   share_server)
         else:
             raise NotImplementedError()
+
+    def choose_share_server_compatible_with_share_group(
+            self, context, share_servers, share_group_instance,
+            share_group_snapshot=None):
+        if self.choose_share_server_compatible_with_share_group_support:
+            return self.plugin.choose_share_server_compatible_with_share_group(
+                context, share_servers, share_group_instance,
+                share_group_snapshot=share_group_snapshot
+            )
+        else:
+            return super(EMCShareDriver, self
+                         ).choose_share_server_compatible_with_share_group(
+                context, share_servers, share_group_instance,
+                share_group_snapshot=share_group_snapshot
+            )
+
+    def create_share_group_replica(self, context,
+                                   new_group_replica, group_replicas,
+                                   new_share_replicas, share_replicas_dict,
+                                   share_access_rules_dict,
+                                   share_replicas_snapshots_dict,
+                                   share_server=None):
+        if self.share_group_replication_support:
+            return self.plugin.create_share_group_replica(
+                context, new_group_replica, group_replicas,
+                new_share_replicas, share_replicas_dict,
+                share_access_rules_dict, share_replicas_snapshots_dict,
+                share_server=share_server)
+        else:
+            return super(EMCShareDriver, self).create_share_group_replica(
+                context, new_group_replica, group_replicas,
+                new_share_replicas, share_replicas_dict,
+                share_access_rules_dict, share_replicas_snapshots_dict,
+                share_server=share_server)
