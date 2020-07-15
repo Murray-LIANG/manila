@@ -932,13 +932,12 @@ class UnityStorageConnection(driver.StorageConnection):
 
     def choose_share_server_compatible_with_share_group(
             self, context, share_servers, share_group_instance,
-            share_group_snapshot=None, share_group_active_replica=None):
+            share_group_snapshot=None, new_share_group_replica=False):
 
         # NOTE(RyanLiang): Only DHSS=True mode uses this function.
 
         if share_group_instance.get('group_replication_type'):
-            if (share_group_instance.get('replica_state')
-                    == const.REPLICA_STATE_ACTIVE):
+            if not new_share_group_replica:
                 # For creating a group that will be involved in a
                 # replication, return None to create a new share server.
                 LOG.debug('Share group will be involved in a %s replication, '

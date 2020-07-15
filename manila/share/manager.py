@@ -743,7 +743,7 @@ class ShareManager(manager.SchedulerDependentManager):
     def _provide_share_server_for_share_group_instance(
             self, context, share_network_id, share_network_subnet_id,
             share_group_instance, share_group_snapshot=None,
-            share_group_active_replica=None):
+            new_share_group_replica=False):
         """Gets or creates share_server and updates share group with its id.
 
         Active share_server can be deleted if there are no shares or share
@@ -766,10 +766,9 @@ class ShareManager(manager.SchedulerDependentManager):
         :param share_group_snapshot: Optional -- ShareGroupSnapshot model.  If
                                      supplied, driver will use it to choose
                                      the appropriate share server.
-        :param share_group_active_replica: Optional -- ShareGroupInstance
-                                           model.  If supplied, driver will use
-                                           it to choose the appropriate share
-                                           server.
+        :param new_share_group_replica: Optional -- True means the
+                                        `share_group_instance` is a new
+                                        creating share group replica.
 
         :returns: dict, dict -- first value is share_server, that
                   has been chosen for share group schedule.
@@ -813,7 +812,7 @@ class ShareManager(manager.SchedulerDependentManager):
                         context, available_share_servers,
                         share_group_instance,
                         share_group_snapshot=share_group_snapshot,
-                        share_group_active_replica=share_group_active_replica,
+                        new_share_group_replica=new_share_group_replica,
                     )
                 except Exception as e:
                     with excutils.save_and_reraise_exception():
@@ -4165,7 +4164,9 @@ class ShareManager(manager.SchedulerDependentManager):
 
             if model_update:
                 share_group_instance = self.db.share_group_instance_update(
-                    context, share_group_instance_id, model_update)
+                    context, share_group_instance_id, model_update,
+                    with_share_group_data=True
+                )
 
             if share_update_list:
                 for share in share_update_list:
@@ -4496,7 +4497,7 @@ class ShareManager(manager.SchedulerDependentManager):
                     self._provide_share_server_for_share_group_instance(
                         context, share_network_id, subnet.get('id'),
                         share_group_replica,
-                        share_group_active_replica=_active_replica))
+                        new_share_group_replica=True))
             except Exception:
                 with excutils.save_and_reraise_exception():
                     LOG.error('Failed to get share server for share group '

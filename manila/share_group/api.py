@@ -719,7 +719,7 @@ class API(base.Base):
         replica = {}
         try:
             replica = self.db.share_group_instance_create(
-                share_group_id, group_instance_values)
+                context, share_group_id, group_instance_values)
 
             for shr in shares:
                 self.db.share_instance_create(

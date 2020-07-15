@@ -117,7 +117,7 @@ class ShareGroupReplicaController(wsgi.Controller, wsgi.AdminActionsMixin):
             msg = _('The "share_group_id" attribute must be a uuid.')
             raise exc.HTTPBadRequest(explanation=msg)
 
-        availability_zone = body.get('share_replica').get('availability_zone')
+        availability_zone = share_group_replica.get('availability_zone')
 
         try:
             new_replica = self.share_group_api.create_share_group_replica(

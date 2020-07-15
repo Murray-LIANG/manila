@@ -336,17 +336,19 @@ class EMCShareDriver(driver.ShareDriver):
 
     def choose_share_server_compatible_with_share_group(
             self, context, share_servers, share_group_instance,
-            share_group_snapshot=None):
+            share_group_snapshot=None, new_share_group_replica=False):
         if self.choose_share_server_compatible_with_share_group_support:
             return self.plugin.choose_share_server_compatible_with_share_group(
                 context, share_servers, share_group_instance,
-                share_group_snapshot=share_group_snapshot
+                share_group_snapshot=share_group_snapshot,
+                new_share_group_replica=new_share_group_replica,
             )
         else:
             return super(EMCShareDriver, self
                          ).choose_share_server_compatible_with_share_group(
                 context, share_servers, share_group_instance,
-                share_group_snapshot=share_group_snapshot
+                share_group_snapshot=share_group_snapshot,
+                new_share_group_replica=new_share_group_replica,
             )
 
     def create_share_group_replica(self, context,

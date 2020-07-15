@@ -433,7 +433,7 @@ class ShareInstance(BASE, ManilaBase):
                     'ShareTypes.deleted == "False")')
     share_group_instance = orm.relationship(
         "ShareGroupInstance",
-        lazy="immediate",
+        lazy="subquery",
         foreign_keys=share_group_instance_id,
         backref="share_group_replica_members",
         primaryjoin=('ShareGroupInstance.id == '

@@ -1454,6 +1454,7 @@ def share_instance_get(context, share_instance_id, session=None,
     ).options(
         joinedload('export_locations'),
         joinedload('share_type'),
+        joinedload('share_group_instance'),
     ).first()
     if result is None:
         raise exception.NotFound()
@@ -4793,7 +4794,7 @@ def share_group_instance_get(context, share_group_instance_id,
     ).filter_by(
         id=share_group_instance_id
     ).options(
-        joinedload('share_group_type')
+        joinedload('share_group_type'),
     ).first()
 
     if not result:
@@ -4918,8 +4919,11 @@ def _share_group_replica_get_with_filters(context, share_group_id=None,
                                           replica_state=None, status=None,
                                           with_share_server=False,
                                           session=None):
-    query = model_query(context, models.ShareGroupInstance, session=session,
-                        read_deleted='no')
+    query = model_query(
+        context, models.ShareGroupInstance, session=session, read_deleted='no'
+    ).options(
+        joinedload('share_group_replica_members'),
+    )
 
     if share_group_id is not None:
         query = query.filter(
