@@ -411,12 +411,10 @@ class UnityClient(object):
                        'active. Nas server with name %{name}s either not '
                        'found or not active. Invalid nas servers state.'
                        ) % {'dr_name': dr_name, 'name': name}
-                LOG.exception(msg)
                 raise exception.EMCUnityError(err=msg)
         except storops_ex.UnityResourceNotFoundError:
             msg = ('No active nas server found with name %{name}s or '
                    '%{dr_name}s.') % {'dr_name': dr_name, 'name': name}
-            LOG.exception(msg)
             raise exception.EMCUnityError(err=msg)
 
     def get_serial_number(self):
@@ -448,23 +446,29 @@ class UnityClient(object):
             dst_nas_server_name=dst_nas_server_name,
             remote_system=remote_system)
 
-    def delete_filesystem_with_shares(self, fs):
-        if not fs:
-            return
-        for share in filter(None, [fs.nfs_share, fs.cifs_share]):
-            self.delete_share(share)
-        self.delete_filesystem(fs)
-
-    def delete_nas_server(self, nas_server):
+    def delete_nas_server_with_resources(self, nas_server_name):
         try:
-            nas_server.delete()
+            nas_server = self.get_nas_server(nas_server_name)
         except storops_ex.UnityResourceNotFoundError:
-            LOG.info('Nas server %s is already removed.', nas_server.name)
+            LOG.info('Nas server %s not found. Skipping deleting it and all '
+                     'its filesystems and shares.')
+            return
+
+        for fs in nas_server.filesystems:
+            for share in filter(None, [fs.nfs_share, fs.cifs_share]):
+                self.delete_share(share)
+            self.delete_filesystem(fs)
+        self.delete_nas_server(nas_server_name)
 
     def disable_replication(self, dr_client, src_nas_server_name):
         """Disables the nas server replication."""
 
-        active_nas_server = self.get_active_nas_server(src_nas_server_name)
+        try:
+            active_nas_server = self.get_active_nas_server(src_nas_server_name)
+        except exception.EMCUnityError as e:
+            LOG.info('Skipping disable replication: %s', e)
+            return
+
         # Delete the replication session on filesystems.
         for fs_id in active_nas_server.filesystems.id:
             self.delete_replication_session(fs_id)
@@ -478,15 +482,11 @@ class UnityClient(object):
         # OS-DR_xxx, and destination's name is xxx.
         if self.is_local_replication(dr_client):
             prefix = NAME_PREFIX_REP_NAS_SERVER
-            if src_nas_server_name.starts_with(prefix):
+            if src_nas_server_name.startswith(prefix):
                 dr_nas_server_name = src_nas_server_name[len(prefix):]
             else:
                 dr_nas_server_name = prefix + src_nas_server_name
 
-        dr_nas_server = dr_client.get_nas_server(name=dr_nas_server_name)
-        # Delete filesystems on the dr side.
-        for dr_fs in dr_nas_server.filesystems:
-            dr_client.delete_filesystem_with_shares(dr_fs)
+        # Delete nas server, its filesystems and shares on the dr side.
+        dr_client.delete_nas_server_with_resources(dr_nas_server_name)
 
-        # Delete the nas server on the dr side.
-        dr_client.delete_nas_server(dr_nas_server)

@@ -1052,4 +1052,4 @@ class UnityStorageConnection(driver.StorageConnection):
             active_nas_server_name = self.replication_source_nas_server
         else:
             active_nas_server_name = share_server['id']
-        active_client.disable_replication(self, active_nas_server_name)
+        active_client.disable_replication(self.client, active_nas_server_name)
