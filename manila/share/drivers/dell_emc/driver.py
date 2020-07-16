@@ -357,6 +357,11 @@ class EMCShareDriver(driver.ShareDriver):
                                    share_access_rules_dict,
                                    share_replicas_snapshots_dict,
                                    share_server=None):
+        """Creates a share group replica.
+
+        This call is made on the host that hosts the replica being created.
+        Refer to the method of ``ShareDriver`` for parameters detail.
+        """
         if self.share_group_replication_support:
             return self.plugin.create_share_group_replica(
                 context, new_group_replica, group_replicas,
@@ -368,4 +373,32 @@ class EMCShareDriver(driver.ShareDriver):
                 context, new_group_replica, group_replicas,
                 new_share_replicas, share_replicas_dict,
                 share_access_rules_dict, share_replicas_snapshots_dict,
+                share_server=share_server)
+
+    def delete_share_group_replica(self, context,
+                                   deleting_group_replica, group_replicas,
+                                   deleting_share_replicas,
+                                   share_replicas_dict,
+                                   share_replicas_snapshots,
+                                   share_server=None):
+        """Deletes a share group replica.
+
+        This call is made on the host that hosts the replica being deleted.
+        Refer to the method of ``ShareDriver`` for parameters detail.
+        """
+        if self.share_group_replication_support:
+            return self.plugin.delete_share_group_replica(
+                context,
+                deleting_group_replica, group_replicas,
+                deleting_share_replicas,
+                share_replicas_dict,
+                share_replicas_snapshots,
+                share_server=share_server)
+        else:
+            return super(EMCShareDriver, self).delete_share_group_replica(
+                context,
+                deleting_group_replica, group_replicas,
+                deleting_share_replicas,
+                share_replicas_dict,
+                share_replicas_snapshots,
                 share_server=share_server)

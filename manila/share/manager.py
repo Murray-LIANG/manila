@@ -840,6 +840,7 @@ class ShareManager(manager.SchedulerDependentManager):
                 context,
                 share_group_instance_id,
                 {'share_server_id': compatible_share_server['id']},
+                with_share_group_data=True
             )
 
             if compatible_share_server['status'] == constants.STATUS_CREATING:
@@ -2089,7 +2090,7 @@ class ShareManager(manager.SchedulerDependentManager):
         LOG.info("Share replica %s created successfully.",
                  share_replica['id'])
 
-    def _delete_all_rules_from_share_replica(self, share_replica,
+    def _delete_all_rules_from_share_replica(self, context, share_replica,
                                              share_server=None, force=False):
         try:
             self.access_helper.update_access_rules(
@@ -2150,7 +2151,8 @@ class ShareManager(manager.SchedulerDependentManager):
         share_server = self._get_share_server(context, share_replica)
         share_replica = self._get_share_instance_dict(context, share_replica)
 
-        self._delete_all_rules_from_share_replica(share_replica,
+        self._delete_all_rules_from_share_replica(context,
+                                                  share_replica,
                                                   share_server=share_server,
                                                   force=force)
 
@@ -4612,8 +4614,8 @@ class ShareManager(manager.SchedulerDependentManager):
 
         context = context.elevated()
 
-        group_replica = self.db.share_group_replica_get(context,
-                                                        share_group_replica_id)
+        group_replica = self.db.share_group_replica_get(
+            context, share_group_replica_id, with_share_group_data=True)
 
         def _set_group_replica_status_error_deleting(detail=None, ex=None):
             self.db.share_group_replica_update(
@@ -4633,7 +4635,8 @@ class ShareManager(manager.SchedulerDependentManager):
         share_replicas = group_replica.get('share_group_replica_members', [])
         for share_replica in share_replicas:
             try:
-                self._delete_all_rules_from_share_replica(share_replica,
+                self._delete_all_rules_from_share_replica(context,
+                                                          share_replica,
                                                           force=force)
             except Exception as e:
                 with excutils.save_and_reraise_exception():

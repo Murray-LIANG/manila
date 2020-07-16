@@ -293,7 +293,6 @@ class ShareAPI(object):
         call_context.cast(
             context, 'create_share_group_replica',
             share_group_replica_id=share_group_replica['id'],
-            share_group_id=share_group_replica['share_group_id'],
         )
 
     def delete_share_group_replica(self, context, share_group_replica,

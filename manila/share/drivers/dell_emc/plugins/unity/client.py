@@ -356,10 +356,20 @@ class UnityClient(object):
         snap = self.get_snapshot(snap_name)
         return snap.restore(delete_backup=True)
 
-    def get_replication_session(self,
-                                src_resource_id=None, dst_resource_id=None):
+    def get_replication_sessions(self,
+                                 src_resource_id=None, dst_resource_id=None):
         return self.system.get_replication_session(
             src_resource_id=src_resource_id, dst_resource_id=dst_resource_id)
+
+    def delete_replication_session(self, src_resource_id):
+        """Deletes the replication session from the source resource.
+
+        :param src_resource_id: the nas server or filesystem id.
+        """
+        sessions = self.get_replication_sessions(
+            src_resource_id=src_resource_id)
+        for session in sessions:
+            session.delete()
 
     def is_nas_server_in_replication(self, nas_server):
         """Returns True if the nas server is participating in a replication.
@@ -391,8 +401,8 @@ class UnityClient(object):
             LOG.debug('Nas server with name %s not found.' % name)
             pass
 
+        dr_name = NAME_PREFIX_REP_NAS_SERVER + name
         try:
-            dr_name = NAME_PREFIX_REP_NAS_SERVER + name
             nas_server = self.get_nas_server(dr_name)
             if not nas_server.is_replication_destination:
                 return nas_server
@@ -415,22 +425,68 @@ class UnityClient(object):
     def get_remote_system(self, name):
         return self.system.get_remote_system(name=name)
 
-    def enable_replication(self, dst_client, src_nas_server_name,
-                           dst_pool_name, max_out_of_sync_minutes):
-        """Enables the nas server replication from this client to dst_client.
+    def is_local_replication(self, dr_client):
+        return self.get_serial_number() == dr_client.get_serial_number()
 
-        dst_client could connect to the same Unity for local replications.
+    def enable_replication(self, dr_client, src_nas_server_name,
+                           dst_pool_name, max_out_of_sync_minutes):
+        """Enables the nas server replication from this client to dr_client.
+
+        dr_client could connect to the same Unity for local replications.
         """
 
         active_nas_server = self.get_active_nas_server(src_nas_server_name)
-        dst_pool_id = dst_client.get_pool(name=dst_pool_name).get_id()
-        dst_serial_num = dst_client.get_serial_number()
-        is_local_rep = self.get_serial_number() == dst_serial_num
+        dst_pool_id = dr_client.get_pool(name=dst_pool_name).get_id()
+        dst_serial_num = dr_client.get_serial_number()
         dst_nas_server_name = (NAME_PREFIX_REP_NAS_SERVER + src_nas_server_name
-                               if is_local_rep else src_nas_server_name)
-        remote_system = (None if is_local_rep
+                               if self.is_local_replication(dr_client)
+                               else src_nas_server_name)
+        remote_system = (None if self.is_local_replication(dr_client)
                          else self.get_remote_system(dst_serial_num))
         return active_nas_server.replicate_with_dst_resource_provisioning(
             max_out_of_sync_minutes, dst_pool_id,
             dst_nas_server_name=dst_nas_server_name,
             remote_system=remote_system)
+
+    def delete_filesystem_with_shares(self, fs):
+        if not fs:
+            return
+        for share in filter(None, [fs.nfs_share, fs.cifs_share]):
+            self.delete_share(share)
+        self.delete_filesystem(fs)
+
+    def delete_nas_server(self, nas_server):
+        try:
+            nas_server.delete()
+        except storops_ex.UnityResourceNotFoundError:
+            LOG.info('Nas server %s is already removed.', nas_server.name)
+
+    def disable_replication(self, dr_client, src_nas_server_name):
+        """Disables the nas server replication."""
+
+        active_nas_server = self.get_active_nas_server(src_nas_server_name)
+        # Delete the replication session on filesystems.
+        for fs_id in active_nas_server.filesystems.id:
+            self.delete_replication_session(fs_id)
+
+        # Delete the replication session on nas server.
+        self.delete_replication_session(active_nas_server.get_id())
+
+        dr_nas_server_name = src_nas_server_name
+        # For nas server in local replications, if source's name is xxx, then
+        # destination's name is OS-DR_xxx, otherwise, source's name is
+        # OS-DR_xxx, and destination's name is xxx.
+        if self.is_local_replication(dr_client):
+            prefix = NAME_PREFIX_REP_NAS_SERVER
+            if src_nas_server_name.starts_with(prefix):
+                dr_nas_server_name = src_nas_server_name[len(prefix):]
+            else:
+                dr_nas_server_name = prefix + src_nas_server_name
+
+        dr_nas_server = dr_client.get_nas_server(name=dr_nas_server_name)
+        # Delete filesystems on the dr side.
+        for dr_fs in dr_nas_server.filesystems:
+            dr_client.delete_filesystem_with_shares(dr_fs)
+
+        # Delete the nas server on the dr side.
+        dr_client.delete_nas_server(dr_nas_server)
