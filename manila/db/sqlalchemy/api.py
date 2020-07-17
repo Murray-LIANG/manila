@@ -4795,6 +4795,7 @@ def share_group_instance_get(context, share_group_instance_id,
         id=share_group_instance_id
     ).options(
         joinedload('share_group_type'),
+        joinedload('share_group_replica_members'),
     ).first()
 
     if not result:

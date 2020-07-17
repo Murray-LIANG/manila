@@ -356,21 +356,6 @@ class UnityClient(object):
         snap = self.get_snapshot(snap_name)
         return snap.restore(delete_backup=True)
 
-    def get_replication_sessions(self,
-                                 src_resource_id=None, dst_resource_id=None):
-        return self.system.get_replication_session(
-            src_resource_id=src_resource_id, dst_resource_id=dst_resource_id)
-
-    def delete_replication_session(self, src_resource_id):
-        """Deletes the replication session from the source resource.
-
-        :param src_resource_id: the nas server or filesystem id.
-        """
-        sessions = self.get_replication_sessions(
-            src_resource_id=src_resource_id)
-        for session in sessions:
-            session.delete()
-
     def is_nas_server_in_replication(self, nas_server):
         """Returns True if the nas server is participating in a replication.
 
@@ -444,21 +429,9 @@ class UnityClient(object):
         return active_nas_server.replicate_with_dst_resource_provisioning(
             max_out_of_sync_minutes, dst_pool_id,
             dst_nas_server_name=dst_nas_server_name,
-            remote_system=remote_system)
-
-    def delete_nas_server_with_resources(self, nas_server_name):
-        try:
-            nas_server = self.get_nas_server(nas_server_name)
-        except storops_ex.UnityResourceNotFoundError:
-            LOG.info('Nas server %s not found. Skipping deleting it and all '
-                     'its filesystems and shares.')
-            return
-
-        for fs in nas_server.filesystems:
-            for share in filter(None, [fs.nfs_share, fs.cifs_share]):
-                self.delete_share(share)
-            self.delete_filesystem(fs)
-        self.delete_nas_server(nas_server_name)
+            remote_system=remote_system,
+            filesystems=active_nas_server.filesystems or []
+        )
 
     def disable_replication(self, dr_client, src_nas_server_name):
         """Disables the nas server replication."""
@@ -468,13 +441,6 @@ class UnityClient(object):
         except exception.EMCUnityError as e:
             LOG.info('Skipping disable replication: %s', e)
             return
-
-        # Delete the replication session on filesystems.
-        for fs_id in active_nas_server.filesystems.id:
-            self.delete_replication_session(fs_id)
-
-        # Delete the replication session on nas server.
-        self.delete_replication_session(active_nas_server.get_id())
 
         dr_nas_server_name = src_nas_server_name
         # For nas server in local replications, if source's name is xxx, then
@@ -487,6 +453,32 @@ class UnityClient(object):
             else:
                 dr_nas_server_name = prefix + src_nas_server_name
 
-        # Delete nas server, its filesystems and shares on the dr side.
-        dr_client.delete_nas_server_with_resources(dr_nas_server_name)
+        try:
+            dr_nas_server = dr_client.get_nas_server(dr_nas_server_name)
+        except storops_ex.UnityResourceNotFoundError:
+            LOG.warning('Nas server %s of dr side not found. Skipping '
+                        'deleting this replication and all related '
+                        'nas server, filesystems and shares.')
+            return
 
+        remote_system = self.get_remote_system(dr_client.get_serial_number())
+
+        # Delete the replication session on filesystems.
+        active_fss = active_nas_server.filesystems or []
+        dr_fss = dr_nas_server.filesystems or []
+        fss_mapping = zip(sorted(active_fss, key=lambda fs: fs.name),
+                          sorted(dr_fss, key=lambda fs: fs.name))
+        for active_fs, dr_fs in fss_mapping:
+            active_fs.delete_replication(remote_system=remote_system,
+                                         dst_filesystem=dr_fs)
+
+        # Delete the replication session on nas server.
+        active_nas_server.delete_replication(remote_system=remote_system,
+                                             dst_nas_server=dr_nas_server)
+
+        # Delete dr side nas server, filesystems and shares.
+        for fs in dr_fss:
+            for share in filter(None, [fs.nfs_share, fs.cifs_share]):
+                dr_client.delete_share(share)
+            dr_client.delete_filesystem(fs)
+        dr_client.delete_nas_server(dr_nas_server_name)

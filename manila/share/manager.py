@@ -1921,7 +1921,7 @@ class ShareManager(manager.SchedulerDependentManager):
 
         return snapshots
 
-    def _db_update_share_replica(self, share_replica_id,
+    def _db_update_share_replica(self, context, share_replica_id,
                                  export_locations=None,
                                  replica_state=None,
                                  access_rules_status=None):
@@ -2082,7 +2082,7 @@ class ShareManager(manager.SchedulerDependentManager):
                     exception=excep)
 
         self._db_update_share_replica(
-            share_replica['id'],
+            context, share_replica['id'],
             export_locations=replica_ref.get('export_locations'),
             replica_state=replica_ref.get('replica_state'),
             access_rules_status=replica_ref.get('access_rules_status'))
@@ -4430,7 +4430,7 @@ class ShareManager(manager.SchedulerDependentManager):
         LOG.info("Share group snapshot %s: deleted successfully",
                  share_group_snapshot_id)
 
-    def _db_update_share_group_replica(self, share_group_replica_id,
+    def _db_update_share_group_replica(self, context, share_group_replica_id,
                                        replica_state=None):
         if replica_state:
             self.db.share_group_replica_update(
@@ -4535,7 +4535,7 @@ class ShareManager(manager.SchedulerDependentManager):
         def _prepare_share_replica_snapshot(_share_replica):
             share_id = _share_replica['share_id']
             share_snapshots = self.db.share_snapshot_get_all_for_share(
-                share_id)
+                context, share_id)
             active_replica = (
                 self.db.share_replicas_get_available_active_replica(context,
                                                                     share_id))
@@ -4584,7 +4584,7 @@ class ShareManager(manager.SchedulerDependentManager):
             not_updated_share_replica_ids.discard(share_replica_update['id'])
 
             self._db_update_share_replica(
-                share_replica_update['id'],
+                context, share_replica_update['id'],
                 export_locations=share_replica_update.get('export_locations'),
                 replica_state=share_replica_update.get('replica_state'),
                 access_rules_status=share_replica_update.get(
@@ -4598,7 +4598,7 @@ class ShareManager(manager.SchedulerDependentManager):
 
         if group_replica_update:
             self._db_update_share_group_replica(
-                share_group_replica_id,
+                context, share_group_replica_id,
                 replica_state=group_replica_update.get('replica_state'))
 
         LOG.info('Share group replica %s created successfully.',
