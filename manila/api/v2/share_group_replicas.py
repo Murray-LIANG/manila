@@ -69,16 +69,16 @@ class ShareGroupReplicaController(wsgi.Controller, wsgi.AdminActionsMixin):
         """Returns a list of share group replicas."""
         context = req.environ['manila.context']
 
-        query_strs = {}
-        query_strs.update(req.GET)
-        sort_key = query_strs.pop('sort_key')
-        sort_dir = query_strs.pop('sort_dir')
+        filters = {}
+        filters.update(req.GET)
+        sort_key = filters.pop('sort_key', None)
+        sort_dir = filters.pop('sort_dir', None)
 
         share_group_id = req.params.get('share_group_id')
-        query_strs['share_group_id'] = share_group_id
+        filters['share_group_id'] = share_group_id
         try:
             group_replicas = self.share_group_api.get_all_share_group_replicas(
-                context, filters=query_strs, with_replica_members=is_detail,
+                context, filters=filters, with_replica_members=is_detail,
                 sort_key=sort_key, sort_dir=sort_dir)
         except exception.NotFound:
             msg = _('Share group replicas of share group ID %s not found.'

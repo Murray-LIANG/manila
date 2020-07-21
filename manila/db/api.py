@@ -1261,24 +1261,30 @@ def share_group_replica_get_all(context,
                                 filters=None,
                                 with_share_group_data=False,
                                 with_share_server=False,
-                                with_replica_members=False):
+                                with_replica_members=False,
+                                sort_key=None, sort_dir=None):
     return IMPL.share_group_replica_get_all(
         context, filters=filters,
         with_share_group_data=with_share_group_data,
         with_share_server=with_share_server,
-        with_replica_members=with_replica_members)
+        with_replica_members=with_replica_members,
+        sort_key=sort_key, sort_dir=sort_dir,
+    )
 
 
 def share_group_replica_get_all_in_all_tenants(context,
                                                filters=None,
                                                with_share_group_data=False,
                                                with_share_server=False,
-                                               with_replica_members=False):
+                                               with_replica_members=False,
+                                               sort_key=None, sort_dir=None):
     return IMPL.share_group_replica_get_all_in_all_tenants(
         context, filters=filters,
         with_share_group_data=with_share_group_data,
         with_share_server=with_share_server,
-        with_replica_members=with_replica_members)
+        with_replica_members=with_replica_members,
+        sort_key=sort_key, sort_dir=sort_dir,
+    )
 
 
 def share_group_replica_get_all_by_share_group(context, share_group_id,

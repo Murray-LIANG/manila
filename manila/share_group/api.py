@@ -557,7 +557,7 @@ class API(base.Base):
     def get_all_share_group_replicas(self, context, filters=None,
                                      with_replica_members=False,
                                      sort_key=None, sort_dir=None):
-        all_tenants = filters.pop('all_tenants')
+        all_tenants = filters.pop('all_tenants', False)
         if all_tenants:
             db_get = self.db.share_group_replica_get_all_in_all_tenants
         else:
