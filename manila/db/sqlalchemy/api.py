@@ -4987,7 +4987,7 @@ def share_group_replica_get(context, share_group_replica_id,
                             sort_key=None, sort_dir=None,
                             session=None):
     replicas = _share_group_instance_get_all_with_filters(
-        context, filters=dict(share_group_replica_id=share_group_replica_id),
+        context, filters=dict(id=share_group_replica_id),
         with_share_server=with_share_server,
         with_share_group_data=with_share_group_data,
         with_replica_members=with_replica_members,

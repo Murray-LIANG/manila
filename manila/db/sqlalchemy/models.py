@@ -438,7 +438,6 @@ class ShareInstance(BASE, ManilaBase):
         backref="share_group_replica_members",
         primaryjoin=('ShareGroupInstance.id == '
                      'ShareInstance.share_group_instance_id'),
-        viewonly=True,
         join_depth=2,
     )
 
@@ -822,7 +821,6 @@ class ShareSnapshotInstance(BASE, ManilaBase):
             'ShareSnapshot.id == ShareSnapshotInstance.snapshot_id, '
             'ShareSnapshotInstance.deleted == "False")'
         ),
-        viewonly=True,
         join_depth=2,
     )
     share_group_snapshot_instance = orm.relationship(
@@ -1418,7 +1416,6 @@ class ShareGroupSnapshotInstance(BASE, ManilaBase):
             '== ShareGroupSnapshotInstance.share_group_snapshot_id, '
             'ShareGroupSnapshotInstance.deleted == "False")'
         ),
-        viewonly=True,
         join_depth=2,
     )
     status = Column(String(255))
