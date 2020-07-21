@@ -548,18 +548,30 @@ class API(base.Base):
             context, share_group_snapshot_id)
         return members
 
-    def get_share_group_replica(self, context, group_replica_id):
-        return self.db.share_group_replica_get(context, group_replica_id)
+    def get_share_group_replica(self, context, group_replica_id,
+                                with_replica_members=False):
+        return self.db.share_group_replica_get(
+            context, group_replica_id,
+            with_replica_members=with_replica_members)
 
-    def get_all_share_group_replicas(self, context, share_group_id=None):
+    def get_all_share_group_replicas(self, context, filters=None,
+                                     with_replica_members=False,
+                                     sort_key=None, sort_dir=None):
+        all_tenants = filters.pop('all_tenants')
+        if all_tenants:
+            db_get = self.db.share_group_replica_get_all_in_all_tenants
+        else:
+            db_get = self.db.share_group_replica_get_all
+
+        share_group_id = filters.get('share_group_id')
         if share_group_id:
             LOG.debug('Searching for share group replicas of group: %s',
                       share_group_id)
-            return self.db.share_group_replica_get_all_by_share_group(
-                context, share_group_id)
         else:
             LOG.debug('Searching for all share group replicas.')
-            return self.db.share_group_replica_get_all(context)
+        return db_get(context, filters=filters,
+                      with_replica_members=with_replica_members,
+                      sort_key=sort_key, sort_dir=sort_dir)
 
     @staticmethod
     def _raise_if_share_group_quotas_exceeded(context, quota_exception,
@@ -813,3 +825,8 @@ class API(base.Base):
                                                          group_replica,
                                                          force=force)
         # TODO(RyanLiang): check quota or not.
+
+    def get_all_share_group_replica_members(self, context,
+                                            share_group_replica_id):
+        return self.db.share_group_replica_members_get_all(
+            context, share_group_replica_id)

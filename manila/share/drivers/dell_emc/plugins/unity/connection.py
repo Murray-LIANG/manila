@@ -1012,21 +1012,28 @@ class UnityStorageConnection(driver.StorageConnection):
         else:
             active_nas_server_name = share_server['id']
 
-        dst_pool_name = share_utils.extract_host(new_group_replica['host'],
-                                                 level='pool')
-        active_client.enable_replication(
-            self.client, active_nas_server_name, dst_pool_name,
+        dr_pool_name = share_utils.extract_host(new_group_replica['host'],
+                                                level='pool')
+        nas_rep, fs_reps = active_client.enable_replication(
+            self.client, active_nas_server_name, dr_pool_name,
             self.replication_rpo)
 
         group_replica_update = {
-            'replica_state': const.REPLICA_STATE_IN_SYNC,
+            'replica_state':
+                const.REPLICA_STATE_IN_SYNC if nas_rep.is_in_sync
+                else const.REPLICA_STATE_OUT_OF_SYNC,
         }
 
         share_replicas_update = []
         for new_share_replica in new_share_replicas:
+            # Filesystem and share names are same on unity.
+            fs_name = new_share_replica['id']
+            replica_state = (const.REPLICA_STATE_IN_SYNC
+                             if fs_reps[fs_name].is_in_sync
+                             else const.REPLICA_STATE_OUT_OF_SYNC)
             share_replicas_update.append(
-                {'id': new_share_replica['id'],
-                 'replica_state': const.REPLICA_STATE_IN_SYNC,
+                {'id': fs_name,
+                 'replica_state': replica_state,
                  'access_rules_status': const.ACCESS_STATE_ACTIVE}
             )
         return group_replica_update, share_replicas_update

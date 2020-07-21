@@ -1226,7 +1226,7 @@ class ShareGroupInstance(BASE, ManilaBase):
     __tablename__ = 'share_group_instances'
     _extra_keys = ['availability_zone']
 
-    _proxified_properties = ['user_id', 'project_id', 'name', 'description',
+    _proxified_properties = ['name', 'description',
                              'consistent_snapshot_support',
                              'group_replication_type']
 
@@ -1235,6 +1235,8 @@ class ShareGroupInstance(BASE, ManilaBase):
             setattr(self, sg_property, share_group[sg_property])
 
     id = Column(String(36), primary_key=True)
+    user_id = Column(String(255), nullable=False)
+    project_id = Column(String(255), nullable=False)
     availability_zone_id = Column(
         String(36),
         ForeignKey('availability_zones.id',
@@ -1385,6 +1387,8 @@ class ShareGroupSnapshotInstance(BASE, ManilaBase):
             setattr(self, sgs_property, share_group_snapshot[sgs_property])
 
     id = Column(String(36), primary_key=True)
+    user_id = Column(String(255), nullable=False)
+    project_id = Column(String(255), nullable=False)
     deleted = Column(String(36), default='False')
     share_group_instance_id = Column(
         String(36),

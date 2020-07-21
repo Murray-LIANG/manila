@@ -840,7 +840,8 @@ class ShareManager(manager.SchedulerDependentManager):
                 context,
                 share_group_instance_id,
                 {'share_server_id': compatible_share_server['id']},
-                with_share_group_data=True
+                with_share_group_data=True,
+                with_replica_members=True,
             )
 
             if compatible_share_server['status'] == constants.STATUS_CREATING:
@@ -4462,7 +4463,7 @@ class ShareManager(manager.SchedulerDependentManager):
             )
 
         share_group_replica = self.db.share_group_replica_get(
-            context, share_group_replica_id)
+            context, share_group_replica_id, with_replica_members=True)
 
         share_group_id = share_group_replica['share_group_id']
 
@@ -4615,7 +4616,8 @@ class ShareManager(manager.SchedulerDependentManager):
         context = context.elevated()
 
         group_replica = self.db.share_group_replica_get(
-            context, share_group_replica_id, with_share_group_data=True)
+            context, share_group_replica_id, with_share_group_data=True,
+            with_replica_members=True)
 
         def _set_group_replica_status_error_deleting(detail=None, ex=None):
             self.db.share_group_replica_update(
@@ -4682,17 +4684,20 @@ class ShareManager(manager.SchedulerDependentManager):
                     share_replicas, share_replicas_dict,
                     share_replicas_snapshots, share_server=share_server))
 
+            update_replica_members = False
             if share_replicas_update:
                 group_replica_update = group_replica_update or {}
                 group_replica_update['share_group_replica_members'] = []
             for update in (share_replicas_update or []):
                 group_replica_update['share_group_replica_members'].append(
                     update)
+                update_replica_members = True
 
             if group_replica_update:
                 group_replica_update['updated_at'] = timeutils.utcnow()
                 group_replica = self.db.share_group_replica_update(
-                    context, group_replica['id'], group_replica_update)
+                    context, group_replica['id'], group_replica_update,
+                    with_replica_members=update_replica_members)
 
         except Exception as e:
             with excutils.save_and_reraise_exception() as exc_context:

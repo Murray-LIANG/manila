@@ -45,12 +45,14 @@ class ShareGroupReplicaController(wsgi.Controller, wsgi.AdminActionsMixin):
         super(ShareGroupReplicaController, self).__init__()
         self.share_group_api = share_group_api.API()
 
-    def _get_share_group_replica(self, context, group_replica_id):
+    def _get_share_group_replica(self, context, group_replica_id,
+                                 with_replica_members=False):
         try:
             return self.share_group_api.get_share_group_replica(
-                context, group_replica_id)
+                context, group_replica_id,
+                with_replica_members=with_replica_members)
         except exception.NotFound:
-            msg = _("Share group replica %s not found.") % group_replica_id
+            msg = _('Share group replica %s not found.') % group_replica_id
             raise exc.HTTPNotFound(explanation=msg)
 
     @wsgi.Controller.api_version(MIN_SUPPORTED_API_VERSION, experimental=True)
@@ -58,7 +60,8 @@ class ShareGroupReplicaController(wsgi.Controller, wsgi.AdminActionsMixin):
     def show(self, req, id):
         """Returns data about the given share group replica."""
         context = req.environ['manila.context']
-        group_replica = self._get_share_group_replica(context, id)
+        group_replica = self._get_share_group_replica(
+            context, id, with_replica_members=True)
         return self._view_builder.detail(req, group_replica)
 
     @wsgi.Controller.authorize('get_all')
@@ -66,12 +69,17 @@ class ShareGroupReplicaController(wsgi.Controller, wsgi.AdminActionsMixin):
         """Returns a list of share group replicas."""
         context = req.environ['manila.context']
 
+        query_strs = {}
+        query_strs.update(req.GET)
+        sort_key = query_strs.pop('sort_key')
+        sort_dir = query_strs.pop('sort_dir')
+
         share_group_id = req.params.get('share_group_id')
+        query_strs['share_group_id'] = share_group_id
         try:
             group_replicas = self.share_group_api.get_all_share_group_replicas(
-                context,
-                share_group_id=share_group_id,
-            )
+                context, filters=query_strs, with_replica_members=is_detail,
+                sort_key=sort_key, sort_dir=sort_dir)
         except exception.NotFound:
             msg = _('Share group replicas of share group ID %s not found.'
                     ) % share_group_id
@@ -135,12 +143,13 @@ class ShareGroupReplicaController(wsgi.Controller, wsgi.AdminActionsMixin):
     def delete(self, req, id):
         """Deletes a share group replica."""
         context = req.environ['manila.context']
-        LOG.info("Deleting share group replica with id: %s",
+        LOG.info('Deleting share group replica with id: %s',
                  id, context=context)
         try:
-            group_replica = self._get_share_group_replica(context, id)
+            group_replica = self._get_share_group_replica(
+                context, id, with_replica_members=True)
         except exception.ShareGroupReplicaNotFound:
-            msg = _("No group replica exists with ID %s.")
+            msg = _('No group replica exists with ID %s.')
             raise exc.HTTPNotFound(explanation=msg % id)
 
         try:
@@ -150,37 +159,37 @@ class ShareGroupReplicaController(wsgi.Controller, wsgi.AdminActionsMixin):
             raise exc.HTTPBadRequest(explanation=six.text_type(e))
         return webob.Response(status_int=http_client.ACCEPTED)
 
-    @wsgi.Controller.api_version('2.31', experimental=True)
+    @wsgi.Controller.api_version(MIN_SUPPORTED_API_VERSION, experimental=True)
     @wsgi.Controller.authorize('get')
     def members(self, req, id):
-        """Returns a list of share group snapshot members."""
+        """Returns a list of share group replica members."""
         context = req.environ['manila.context']
 
-        snaps = self.share_group_api.get_all_share_group_snapshot_members(
+        replicas = self.share_group_api.get_all_share_group_replica_members(
             context, id)
 
-        limited_list = common.limited(snaps, req)
+        limited_list = common.limited(replicas, req)
 
-        snaps = self._view_builder.member_list(req, limited_list)
-        return snaps
+        replicas = self._view_builder.member_list(req, limited_list)
+        return replicas
 
     def _update(self, *args, **kwargs):
-        db.share_group_snapshot_update(*args, **kwargs)
+        db.share_group_replica_update(*args, **kwargs)
 
-    def _get(self, *args, **kwargs):
-        return self.share_group_api.get_share_group_snapshot(*args, **kwargs)
-
-    def _delete(self, context, resource, force=True):
-        db.share_group_snapshot_destroy(context.elevated(), resource['id'])
-
-    @wsgi.Controller.api_version('2.31', experimental=True)
+    @wsgi.Controller.api_version(MIN_SUPPORTED_API_VERSION, experimental=True)
     @wsgi.action('reset_status')
-    def share_group_snapshot_reset_status(self, req, id, body):
+    def share_group_replica_reset_status(self, req, id, body):
         return self._reset_status(req, id, body)
 
-    @wsgi.Controller.api_version('2.31', experimental=True)
+    def _get(self, *args, **kwargs):
+        return self.share_group_api.get_share_group_replica(*args, **kwargs)
+
+    def _delete(self, context, resource, force=True):
+        db.share_group_replica_delete(context.elevated(), resource['id'])
+
+    @wsgi.Controller.api_version(MIN_SUPPORTED_API_VERSION, experimental=True)
     @wsgi.action('force_delete')
-    def share_group_snapshot_force_delete(self, req, id, body):
+    def share_group_replica_force_delete(self, req, id, body):
         return self._force_delete(req, id, body)
 
 

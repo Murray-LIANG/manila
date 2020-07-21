@@ -86,6 +86,9 @@ class ShareGroupReplicaViewBuilder(common.ViewBuilder):
                 self._get_links(request, share_group_replica.get('id')),
 
             'availability_zone': share_group_replica.get('availability_zone'),
+            'host': share_group_replica.get('host'),
+            'share_network_id': share_group_replica.get('share_network_id'),
+            'share_server_id': share_group_replica.get('share_server_id'),
             'created_at': share_group_replica.get('created_at'),
             'updated_at': share_group_replica.get('updated_at'),
 

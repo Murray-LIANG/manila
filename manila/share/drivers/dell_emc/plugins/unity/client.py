@@ -411,47 +411,66 @@ class UnityClient(object):
     def is_local_replication(self, dr_client):
         return self.get_serial_number() == dr_client.get_serial_number()
 
-    def enable_replication(self, dr_client, src_nas_server_name,
-                           dst_pool_name, max_out_of_sync_minutes):
+    @staticmethod
+    def _zip_active_dr_filesystems(active_filesystems, dr_filesystems):
+        return zip(sorted(active_filesystems or [], key=lambda fs: fs.name),
+                   sorted(dr_filesystems or [], key=lambda fs: fs.name))
+
+    def enable_replication(self, dr_client, active_nas_server_name,
+                           dr_pool_name, max_out_of_sync_minutes):
         """Enables the nas server replication from this client to dr_client.
 
         dr_client could connect to the same Unity for local replications.
         """
 
-        active_nas_server = self.get_active_nas_server(src_nas_server_name)
-        dst_pool_id = dr_client.get_pool(name=dst_pool_name).get_id()
-        dst_serial_num = dr_client.get_serial_number()
-        dst_nas_server_name = (NAME_PREFIX_REP_NAS_SERVER + src_nas_server_name
-                               if self.is_local_replication(dr_client)
-                               else src_nas_server_name)
+        active_nas_server = self.get_active_nas_server(active_nas_server_name)
+        dr_pool_id = dr_client.get_pool(name=dr_pool_name).get_id()
+        dr_serial_num = dr_client.get_serial_number()
+        dr_nas_server_name = (
+            NAME_PREFIX_REP_NAS_SERVER + active_nas_server_name
+            if self.is_local_replication(dr_client)
+            else active_nas_server_name)
         remote_system = (None if self.is_local_replication(dr_client)
-                         else self.get_remote_system(dst_serial_num))
-        return active_nas_server.replicate_with_dst_resource_provisioning(
-            max_out_of_sync_minutes, dst_pool_id,
-            dst_nas_server_name=dst_nas_server_name,
+                         else self.get_remote_system(dr_serial_num))
+        active_filesystems = active_nas_server.filesystems or []
+        nas_rep = active_nas_server.replicate_with_dst_resource_provisioning(
+            max_out_of_sync_minutes, dr_pool_id,
+            dst_nas_server_name=dr_nas_server_name,
             remote_system=remote_system,
-            filesystems=active_nas_server.filesystems or []
+            filesystems=active_filesystems,
         )
 
-    def disable_replication(self, dr_client, src_nas_server_name):
+        # Manual sync the nas server replication session or the share won't be
+        # created on the destination system.
+        nas_rep.sync()
+
+        dr_nas_server = dr_client.get_nas_server(dr_nas_server_name)
+        filesystem_reps = {}
+        for active_fs, dr_fs in self._zip_active_dr_filesystems(
+                active_filesystems, dr_nas_server.filesystems):
+            filesystem_reps[active_fs.name] = active_fs.get_replications(
+                remote_system=remote_system, dst_filesystem=dr_fs)[0]
+        return nas_rep, filesystem_reps
+
+    def disable_replication(self, dr_client, active_nas_server_name):
         """Disables the nas server replication."""
 
         try:
-            active_nas_server = self.get_active_nas_server(src_nas_server_name)
+            active_nas_server = self.get_active_nas_server(active_nas_server_name)
         except exception.EMCUnityError as e:
             LOG.info('Skipping disable replication: %s', e)
             return
 
-        dr_nas_server_name = src_nas_server_name
+        dr_nas_server_name = active_nas_server_name
         # For nas server in local replications, if source's name is xxx, then
         # destination's name is OS-DR_xxx, otherwise, source's name is
         # OS-DR_xxx, and destination's name is xxx.
         if self.is_local_replication(dr_client):
             prefix = NAME_PREFIX_REP_NAS_SERVER
-            if src_nas_server_name.startswith(prefix):
-                dr_nas_server_name = src_nas_server_name[len(prefix):]
+            if active_nas_server_name.startswith(prefix):
+                dr_nas_server_name = active_nas_server_name[len(prefix):]
             else:
-                dr_nas_server_name = prefix + src_nas_server_name
+                dr_nas_server_name = prefix + active_nas_server_name
 
         try:
             dr_nas_server = dr_client.get_nas_server(dr_nas_server_name)
@@ -469,12 +488,12 @@ class UnityClient(object):
         fss_mapping = zip(sorted(active_fss, key=lambda fs: fs.name),
                           sorted(dr_fss, key=lambda fs: fs.name))
         for active_fs, dr_fs in fss_mapping:
-            active_fs.delete_replication(remote_system=remote_system,
-                                         dst_filesystem=dr_fs)
+            active_fs.delete_replications(remote_system=remote_system,
+                                          dst_filesystem=dr_fs)
 
         # Delete the replication session on nas server.
-        active_nas_server.delete_replication(remote_system=remote_system,
-                                             dst_nas_server=dr_nas_server)
+        active_nas_server.delete_replications(remote_system=remote_system,
+                                              dst_nas_server=dr_nas_server)
 
         # Delete dr side nas server, filesystems and shares.
         for fs in dr_fss:

@@ -4622,8 +4622,12 @@ def _share_group_get_all(context, project_id=None, share_server_id=None,
     try:
         query = apply_sorting(models.ShareGroup, query, sort_key, sort_dir)
     except AttributeError:
-        msg = _("Wrong sorting key provided - '%s'.") % sort_key
-        raise exception.InvalidInput(reason=msg)
+        try:
+            query = apply_sorting(
+                models.ShareGroupInstance, query, sort_key, sort_dir)
+        except AttributeError:
+            msg = _("Wrong sorting key provided - '%s'.") % sort_key
+            raise exception.InvalidInput(reason=msg)
 
     if detailed:
         return query.options(joinedload('share_types')).all()
@@ -4783,44 +4787,106 @@ def count_share_groups(context, project_id, user_id=None,
     return query.first()[0]
 
 
+def _set_share_group_instances_share_group_data(context, share_group_instances,
+                                                session):
+    if share_group_instances and not isinstance(share_group_instances, list):
+        share_group_instances = [share_group_instances]
+
+    for share_group_instance in share_group_instances:
+        share_group = _share_group_get(context,
+                                       share_group_instance['share_group_id'],
+                                       session=session)
+        share_group_instance.set_share_group_data(share_group)
+
+    return share_group_instances
+
+
+def _share_group_instance_get_all_with_filters(context, all_tenants=False,
+                                               filters=None,
+                                               with_share_group_data=False,
+                                               with_share_group_type=False,
+                                               with_share_server=False,
+                                               with_replica_members=False,
+                                               sort_key=None, sort_dir=None,
+                                               session=None):
+    session = session or get_session()
+    sort_key = sort_key or 'created_at'
+    sort_dir = sort_dir or 'desc'
+    query = model_query(context, models.ShareGroupInstance,
+                        session=session, read_deleted='no')
+    if with_share_group_type:
+        query = query.options(joinedload('share_group_type'))
+    if with_share_server:
+        query = query.options(joinedload('share_server'))
+    if with_replica_members:
+        query = query.options(joinedload('share_group_replica_members'))
+
+    filters = filters or {}
+    if not all_tenants:  # Leave the authorization to the caller.
+        filters['project_id'] = context.project_id
+    for name, value in filters.items():
+        attr = getattr(models.ShareGroupInstance, name)
+        if attr is None:
+            raise exception.InvalidInput(reason='Share group instance cannot '
+                                                'be filtered by "%s".' % name)
+        query = query.filter(attr == value)
+
+    try:
+        query = apply_sorting(models.ShareGroupInstance, query, sort_key,
+                              sort_dir)
+    except AttributeError:
+        raise exception.InvalidInput(
+            reason='Wrong sorting key provided - "%s".' % sort_key)
+
+    if 'limit' in filters:
+        offset = filters.get('offset', 0)
+        query = query.limit(filters['limit']).offset(offset)
+
+    share_group_instances = query.all()
+    if with_share_group_data:
+        share_group_instances = _set_share_group_instances_share_group_data(
+            context, share_group_instances, session)
+    return share_group_instances
+
+
 @require_context
 def share_group_instance_get(context, share_group_instance_id,
                              with_share_group_data=False,
+                             with_replica_members=False,
                              session=None):
-    session = session or get_session()
-    result = model_query(
-        context, models.ShareGroupInstance,
-        session=session, project_only=True, read_deleted='no'
-    ).filter_by(
-        id=share_group_instance_id
-    ).options(
-        joinedload('share_group_type'),
-        joinedload('share_group_replica_members'),
-    ).first()
+    instances = _share_group_instance_get_all_with_filters(
+        context, filters=dict(id=share_group_instance_id),
+        with_replica_members=with_replica_members,
+        with_share_group_type=True,
+        with_share_group_data=with_share_group_data,
+        session=session,
+    )
 
-    if not result:
+    if not instances:
         raise exception.ShareGroupInstanceNotFound(
             share_group_instance_id=share_group_instance_id)
 
-    if with_share_group_data:
-        share_group = _share_group_get(context, result['share_group_id'],
-                                       session=session)
-        result.set_share_group_data(share_group)
-
-    return result
+    return instances[0]
 
 
 @require_admin_context
-def share_group_instance_get_all(context, filters=None):
-    session = get_session()
+def share_group_instance_get_all_in_all_tenants(context, filters=None,
+                                                sort_key=None,
+                                                sort_dir=None, session=None):
+    return _share_group_instance_get_all_with_filters(
+        context, all_tenants=True, filters=filters, sort_key=sort_key,
+        sort_dir=sort_dir, session=session,
+    )
 
-    query = model_query(
-        context, models.ShareGroupInstance, session=session, read_deleted='no'
-    ).all
 
-    # TODO(RyanLiang): handle filter.
-
-    return query
+@require_context
+def share_group_instance_get_all(context, filters=None,
+                                 sort_key=None, sort_dir=None,
+                                 session=None):
+    return _share_group_instance_get_all_with_filters(
+        context, all_tenants=False, filters=filters, sort_key=sort_key,
+        sort_dir=sort_dir, session=session,
+    )
 
 
 def _share_group_instance_create(context, share_group_id, values, session):
@@ -4845,9 +4911,12 @@ def share_group_instance_create(context, share_group_id, values):
 
 
 def _share_group_instance_update(context, share_group_instance_id, values,
-                                 session):
+                                 session, with_share_group_data=False,
+                                 with_replica_members=False):
     share_group_instance = share_group_instance_get(
-        context, share_group_instance_id, session=session)
+        context, share_group_instance_id, session=session,
+        with_share_group_data=with_share_group_data,
+        with_replica_members=with_replica_members)
     share_group_instance.update(values)
     share_group_instance.save(session=session)
     return share_group_instance
@@ -4855,25 +4924,20 @@ def _share_group_instance_update(context, share_group_instance_id, values,
 
 @require_context
 def share_group_instance_update(context, share_group_instance_id, values,
-                                with_share_group_data=False):
+                                with_share_group_data=False,
+                                with_replica_members=False):
     session = get_session()
     _ensure_availability_zone_exists(context, values, session, strict=False)
     with session.begin():
-        share_group_instance = _share_group_instance_update(
-            context, share_group_instance_id, values, session)
-
-        if with_share_group_data:
-            share_group = share_group_get(
-                context, share_group_instance['share_group_id'],
-                session=session)
-            share_group_instance.set_share_group_data(share_group)
-        return share_group_instance
+        return _share_group_instance_update(
+            context, share_group_instance_id, values, session,
+            with_share_group_data=with_share_group_data,
+            with_replica_members=with_replica_members)
 
 
 @require_context
-def share_group_instance_delete(context, share_group_instance_id,
-                                session=None):
-    session = session or get_session()
+def share_group_instance_delete(context, share_group_instance_id):
+    session = get_session()
     with session.begin():
         share_group_instance = share_group_instance_get(
             context, share_group_instance_id, session=session
@@ -4915,146 +4979,113 @@ def count_share_group_replicas(context, project_id, user_id=None,
     return query.first()[0]
 
 
-def _share_group_replica_get_with_filters(context, share_group_id=None,
-                                          share_group_replica_id=None,
-                                          replica_state=None, status=None,
-                                          with_share_server=False,
-                                          session=None):
-    query = model_query(
-        context, models.ShareGroupInstance, session=session, read_deleted='no'
-    ).options(
-        joinedload('share_group_replica_members'),
-    )
-
-    if share_group_id is not None:
-        query = query.filter(
-            models.ShareGroupInstance.share_group_id == share_group_id
-        )
-
-    if share_group_replica_id is not None:
-        query = query.filter(
-            models.ShareGroupInstance.id == share_group_replica_id
-        )
-
-    if replica_state is not None:
-        query = query.filter(
-            models.ShareGroupInstance.replica_state == replica_state
-        )
-    else:
-        query = query.filter(
-            models.ShareGroupInstance.replica_state.isnot(None)
-        )
-
-    if status is not None:
-        query = query.filter(
-            models.ShareGroupInstance.status == status
-        )
-
-    if with_share_server:
-        query = query.options(joinedload('share_server'))
-
-    return query
-
-
-def _set_share_group_replica_share_group_data(context, share_group_replicas,
-                                              session):
-    if share_group_replicas and not isinstance(share_group_replicas, list):
-        share_group_replicas = [share_group_replicas]
-
-    for share_group_replica in share_group_replicas:
-        share_group = _share_group_get(context,
-                                       share_group_replica['share_group_id'],
-                                       session=session)
-        share_group_replica.set_share_group_data(share_group)
-
-    return share_group_replicas
-
-
 @require_context
 def share_group_replica_get(context, share_group_replica_id,
                             with_share_group_data=False,
                             with_share_server=False,
+                            with_replica_members=False,
+                            sort_key=None, sort_dir=None,
                             session=None):
-    session = session or get_session()
-    result = _share_group_replica_get_with_filters(
-        context, share_group_replica_id=share_group_replica_id,
-        with_share_server=with_share_server, session=session
-    ).first()
+    replicas = _share_group_instance_get_all_with_filters(
+        context, filters=dict(share_group_replica_id=share_group_replica_id),
+        with_share_server=with_share_server,
+        with_share_group_data=with_share_group_data,
+        with_replica_members=with_replica_members,
+        sort_key=sort_key, sort_dir=sort_dir,
+        session=session
+    )
 
-    if result is None:
+    if not replicas:
         raise exception.ShareGroupReplicaNotFound(
             share_group_replica_id=share_group_replica_id)
 
-    if with_share_group_data:
-        result = _set_share_group_replica_share_group_data(
-            context, result, session
-        )[0]
+    return replicas[0]
 
-    return result
+
+@require_admin_context
+def share_group_replica_get_all_in_all_tenants(context,
+                                               filters=None,
+                                               with_share_group_data=False,
+                                               with_share_server=False,
+                                               with_replica_members=False,
+                                               sort_key=None, sort_dir=None,
+                                               session=None):
+    return _share_group_instance_get_all_with_filters(
+        context, all_tenants=True, filters=filters,
+        with_share_group_data=with_share_group_data,
+        with_share_server=with_share_server,
+        with_replica_members=with_replica_members,
+        sort_key=sort_key, sort_dir=sort_dir, session=session
+    )
 
 
 @require_context
 def share_group_replica_get_all(context,
+                                filters=None,
                                 with_share_group_data=False,
                                 with_share_server=False,
-                                session=None):
-    session = session or get_session()
-    result = _share_group_replica_get_with_filters(
-        context, with_share_server=with_share_server, session=session
-    ).all()
-
-    if with_share_group_data:
-        result = _set_share_group_replica_share_group_data(
-            context, result, session
-        )
-
-    return result
+                                with_replica_members=False,
+                                session=None,
+                                sort_key=None, sort_dir=None):
+    return _share_group_instance_get_all_with_filters(
+        context, filters=filters,
+        with_share_group_data=with_share_group_data,
+        with_share_server=with_share_server,
+        with_replica_members=with_replica_members,
+        sort_key=sort_key, sort_dir=sort_dir, session=session
+    )
 
 
 @require_context
 def share_group_replica_get_all_by_share_group(context, share_group_id,
                                                with_share_group_data=False,
                                                with_share_server=False,
+                                               with_replica_members=False,
+                                               sort_key=None, sort_dir=None,
                                                session=None):
-    session = session or get_session()
-    result = _share_group_replica_get_with_filters(
-        context, share_group_id=share_group_id,
-        with_share_server=with_share_server, session=session
-    ).all()
-
-    if with_share_group_data:
-        result = _set_share_group_replica_share_group_data(
-            context, result, session
-        )
-
-    return result
+    return _share_group_instance_get_all_with_filters(
+        context, filters=dict(share_group_id=share_group_id),
+        with_share_group_data=with_share_group_data,
+        with_share_server=with_share_server,
+        with_replica_members=with_replica_members,
+        sort_key=sort_key, sort_dir=sort_dir, session=session
+    )
 
 
 @require_context
 def share_group_replica_get_available_active_replica(
         context, share_group_id, with_share_group_data=False,
-        with_share_server=False, session=None):
+        with_share_server=False, with_replica_members=False,
+        sort_key=None, sort_dir=None, session=None):
 
-    session = session or get_session()
-    result = _share_group_replica_get_with_filters(
-        context, share_group_id=share_group_id,
+    replicas = _share_group_instance_get_all_with_filters(
+        context,
+        filters=dict(share_group_id=share_group_id,
+                     replica_state=constants.REPLICA_STATE_ACTIVE,
+                     status=constants.STATUS_AVAILABLE),
+        with_share_group_data=with_share_group_data,
         with_share_server=with_share_server,
-        replica_state=constants.REPLICA_STATE_ACTIVE,
-        status=constants.STATUS_AVAILABLE,
-        session=session
-    ).first()
+        with_replica_members=with_replica_members,
+        sort_key=sort_key, sort_dir=sort_dir, session=session
+    )
 
-    if result and with_share_group_data:
-        result = _set_share_group_replica_share_group_data(
-            context, result, session
-        )[0]
+    return replicas[0] if replicas else None
 
-    return result
+
+@require_context
+def share_group_replica_members_get_all(context, share_group_replica_id):
+    session = get_session()
+    query = model_query(
+        context, models.ShareInstance, session=session, read_deleted='no',
+    ).filter_by(
+        share_group_nstance_id=share_group_replica_id)
+    return query.all()
 
 
 @require_context
 def share_group_replica_update(context, share_group_replica_id, values,
-                               with_share_group_data=False, session=None):
+                               with_share_group_data=False,
+                               with_replica_members=False, session=None):
 
     session = session or get_session()
 
@@ -5062,23 +5093,16 @@ def share_group_replica_update(context, share_group_replica_id, values,
         _ensure_availability_zone_exists(context, values, session,
                                          strict=False)
 
-        updated_share_group_replica = _share_group_instance_update(
-            context, share_group_replica_id, values, session=session)
-
-        if with_share_group_data:
-            updated_share_group_replica = (
-                _set_share_group_replica_share_group_data(
-                    context, updated_share_group_replica, session)
-            )[0]
-
-    return updated_share_group_replica
+        return _share_group_instance_update(
+            context, share_group_replica_id, values, session,
+            with_share_group_data=with_share_group_data,
+            with_replica_members=with_replica_members,
+        )
 
 
 @require_context
-def share_group_replica_delete(context, share_group_replica_id, session=None):
-    session = session or get_session()
-    share_group_instance_delete(context, share_group_replica_id,
-                                session=session)
+def share_group_replica_delete(context, share_group_replica_id):
+    share_group_instance_delete(context, share_group_replica_id)
 
 
 @require_context

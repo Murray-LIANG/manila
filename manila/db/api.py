@@ -1200,16 +1200,30 @@ def count_share_groups_in_share_network(context, share_network_id,
 
 
 def share_group_instance_get(context, share_group_instance_id,
-                             with_share_group_data=False):
+                             with_share_group_data=False,
+                             with_replica_members=False):
     """Gets the share group instance by id."""
     return IMPL.share_group_instance_get(
         context, share_group_instance_id,
-        with_share_group_data=with_share_group_data)
+        with_share_group_data=with_share_group_data,
+        with_replica_members=with_replica_members)
 
 
-def share_group_instance_get_all(context, filters=None):
+def share_group_instance_get_all(context, filters=None, sort_key=None,
+                                 sort_dir=None):
     """Returns all share group instances."""
-    return IMPL.share_group_instance_get_all(context, filters=filters)
+    return IMPL.share_group_instance_get_all(context, filters=filters,
+                                             sort_key=sort_key,
+                                             sort_dir=sort_dir)
+
+
+def share_group_instance_get_all_in_all_tenants(context, filters=None,
+                                                sort_key=None, sort_dir=None):
+    """Returns all share group instances."""
+    return IMPL.share_group_instance_get_all_in_all_tenants(context,
+                                                            filters=filters,
+                                                            sort_key=sort_key,
+                                                            sort_dir=sort_dir)
 
 
 def share_group_instance_create(context, share_group_id, values):
@@ -1218,11 +1232,13 @@ def share_group_instance_create(context, share_group_id, values):
 
 
 def share_group_instance_update(context, share_group_instance_id, values,
-                                with_share_group_data=False):
+                                with_share_group_data=False,
+                                with_replica_members=False):
     """Updates a share group instance."""
     return IMPL.share_group_instance_update(
         context, share_group_instance_id, values,
-        with_share_group_data=with_share_group_data)
+        with_share_group_data=with_share_group_data,
+        with_replica_members=with_replica_members)
 
 
 def share_group_instance_delete(context, share_group_instance_id):
@@ -1232,46 +1248,74 @@ def share_group_instance_delete(context, share_group_instance_id):
 
 def share_group_replica_get(context, share_group_replica_id,
                             with_share_group_data=False,
-                            with_share_server=False):
+                            with_share_server=False,
+                            with_replica_members=False):
     return IMPL.share_group_replica_get(
         context, share_group_replica_id,
         with_share_group_data=with_share_group_data,
-        with_share_server=with_share_server)
+        with_share_server=with_share_server,
+        with_replica_members=with_replica_members)
 
 
 def share_group_replica_get_all(context,
+                                filters=None,
                                 with_share_group_data=False,
-                                with_share_server=False):
+                                with_share_server=False,
+                                with_replica_members=False):
     return IMPL.share_group_replica_get_all(
-        context, with_share_group_data=with_share_group_data,
-        with_share_server=with_share_server)
+        context, filters=filters,
+        with_share_group_data=with_share_group_data,
+        with_share_server=with_share_server,
+        with_replica_members=with_replica_members)
+
+
+def share_group_replica_get_all_in_all_tenants(context,
+                                               filters=None,
+                                               with_share_group_data=False,
+                                               with_share_server=False,
+                                               with_replica_members=False):
+    return IMPL.share_group_replica_get_all_in_all_tenants(
+        context, filters=filters,
+        with_share_group_data=with_share_group_data,
+        with_share_server=with_share_server,
+        with_replica_members=with_replica_members)
 
 
 def share_group_replica_get_all_by_share_group(context, share_group_id,
                                                with_share_group_data=False,
-                                               with_share_server=False):
+                                               with_share_server=False,
+                                               with_replica_members=False):
     return IMPL.share_group_replica_get_all_by_share_group(
         context, share_group_id, with_share_group_data=with_share_group_data,
-        with_share_server=with_share_server)
+        with_share_server=with_share_server,
+        with_replica_members=with_replica_members)
 
 
 def share_group_replica_get_available_active_replica(
         context, share_group_id, with_share_group_data=False,
-        with_share_server=False):
+        with_share_server=False, with_replica_members=False):
     return IMPL.share_group_replica_get_available_active_replica(
         context, share_group_id, with_share_group_data=with_share_group_data,
-        with_share_server=with_share_server)
+        with_share_server=with_share_server,
+        with_replica_members=with_replica_members)
 
 
 def share_group_replica_update(context, share_group_replica_id, values,
-                               with_share_group_data=False):
+                               with_share_group_data=False,
+                               with_replica_members=False):
     return IMPL.share_group_replica_update(
         context, share_group_replica_id, values,
-        with_share_group_data=with_share_group_data)
+        with_share_group_data=with_share_group_data,
+        with_replica_members=with_replica_members)
 
 
 def share_group_replica_delete(context, share_group_replica_id):
     return IMPL.share_group_replica_delete(context, share_group_replica_id)
+
+
+def share_group_replica_members_get_all(context, share_group_replica_id):
+    return IMPL.share_group_replica_members_get_all(context,
+                                                    share_group_replica_id)
 
 
 def count_share_group_snapshot_members_in_share(context, share_id,
