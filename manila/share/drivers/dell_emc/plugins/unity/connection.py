@@ -1026,14 +1026,29 @@ class UnityStorageConnection(driver.StorageConnection):
 
         share_replicas_update = []
         for new_share_replica in new_share_replicas:
+            # The new share replica's name is the same as the active share
+            # replica's on unity but different from the Manila share id.
+            # Need to use the active share replica's name to locate the share
+            # and its filesystem on unity.
             # Filesystem and share names are same on unity.
-            fs_name = new_share_replica['id']
+            active_share_replica = [
+                r for r in share_replicas_dict[new_share_replica['id']]
+                if r['replica_state'] == const.REPLICA_STATE_ACTIVE
+            ][0]
+
+            fs_name = active_share_replica['id']
             replica_state = (const.REPLICA_STATE_IN_SYNC
                              if fs_reps[fs_name].is_in_sync
                              else const.REPLICA_STATE_OUT_OF_SYNC)
             share_replicas_update.append(
                 {'id': fs_name,
                  'replica_state': replica_state,
+                 # Copy the active share replica's export_locations to the dr
+                 # replica. Because the dr replica's id is different from the
+                 # name on Unity, we need to use export_locations to locate the
+                 # correct share on Unity.
+                 'export_locations':
+                     active_share_replica.get('export_locations'),
                  'access_rules_status': const.ACCESS_STATE_ACTIVE}
             )
         return group_replica_update, share_replicas_update

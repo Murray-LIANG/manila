@@ -1875,7 +1875,11 @@ class ShareManager(manager.SchedulerDependentManager):
                 'launched_at': timeutils.utcnow(),
                 'progress': progress
             }
-            if share.get('replication_type'):
+            # The share in the group with replication enabled would be
+            # replicated in the future, set its replica_state to active.
+            if (share.get('replication_type') or
+                    (share_group_instance
+                     and share_group_instance.get('group_replication_type'))):
                 updates['replica_state'] = constants.REPLICA_STATE_ACTIVE
 
             self.db.share_instance_update(context, share_instance_id, updates)

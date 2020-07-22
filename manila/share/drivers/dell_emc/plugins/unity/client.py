@@ -495,9 +495,9 @@ class UnityClient(object):
         active_nas_server.delete_replications(remote_system=remote_system,
                                               dst_nas_server=dr_nas_server)
 
-        # Delete dr side nas server, filesystems and shares.
+        # Delete dr side filesystems then nas server. No need to delete the
+        # shares on the dr destination nas server. They will be deleted
+        # together with filesystems.
         for fs in dr_fss:
-            for share in filter(None, [fs.nfs_share, fs.cifs_share]):
-                dr_client.delete_share(share)
             dr_client.delete_filesystem(fs)
         dr_client.delete_nas_server(dr_nas_server_name)
