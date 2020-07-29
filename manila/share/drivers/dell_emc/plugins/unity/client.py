@@ -382,31 +382,32 @@ class UnityClient(object):
             dr_name = NAME_PREFIX_DR_NAS_SERVER + name
             active_name = name
 
-        if role == 'active':
-            is_role_match = lambda s: not s.is_replication_destination
-        else:
-            is_role_match = lambda s: s.is_replication_destination
+        def _is_role_match(s):
+            if role == 'active':
+                return not s.is_replication_destination
+            else:
+                return s.is_replication_destination
 
         nas_server = None
         for name in [active_name, dr_name]:
             try:
                 nas_server = self.get_nas_server(name)
-                if is_role_match(nas_server):
+                if _is_role_match(nas_server):
                     break
                 else:
                     LOG.debug('Nas server with name %(name)s found but not '
-                              '%(role)s.' % {'name': name, 'role': role})
+                              '%(role)s.', {'name': name, 'role': role})
                     nas_server = None
             except storops_ex.UnityResourceNotFoundError:
-                LOG.debug('Nas server with name %s not found.' % name)
+                LOG.debug('Nas server with name %s not found.', name)
 
         if not nas_server:
             raise exception.EMCUnityError(
                 err='No %(role)s nas server found with any name in '
                     '%(names)s.' % {'role': role, 'names': (active_name, name)}
             )
-        LOG.debug('Nas server: name=%(name)s,role=%(role)s returned.'
-                  % {'name': nas_server.name, 'role': role})
+        LOG.debug('Nas server: name=%(name)s,role=%(role)s returned.',
+                  {'name': nas_server.name, 'role': role})
         return nas_server
 
     def get_active_nas_server(self, name):

@@ -2036,8 +2036,8 @@ class ShareDriver(object):
                         'share': share_replica['share_id']})
 
                     # Clean up any share replicas has done creation previously.
-                    LOG.debug(
-                        'Attempting to clean up share replicas due to failure.')
+                    LOG.debug('Attempting to clean up share replicas due to '
+                              'failure.')
                     for share_replica in share_replicas_done:
                         share_replica_id = share_replica['id']
                         share_replica_snapshots = list(filter(None, [

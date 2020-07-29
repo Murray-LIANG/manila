@@ -23,9 +23,9 @@ from webob import exc
 from manila.api import common
 from manila.api.openstack import wsgi
 import manila.api.views.share_group_replicas as share_group_replicas_views
+from manila.common import constants
 from manila import db
 from manila import exception
-from manila.common import constants
 from manila.i18n import _
 import manila.share_group.api as share_group_api
 
