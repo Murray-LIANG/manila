@@ -25,6 +25,7 @@ from manila.api.openstack import wsgi
 import manila.api.views.share_group_replicas as share_group_replicas_views
 from manila import db
 from manila import exception
+from manila.common import constants
 from manila.i18n import _
 import manila.share_group.api as share_group_api
 
@@ -159,26 +160,13 @@ class ShareGroupReplicaController(wsgi.Controller, wsgi.AdminActionsMixin):
             raise exc.HTTPBadRequest(explanation=six.text_type(e))
         return webob.Response(status_int=http_client.ACCEPTED)
 
-    @wsgi.Controller.api_version(MIN_SUPPORTED_API_VERSION, experimental=True)
-    @wsgi.Controller.authorize('get')
-    def members(self, req, id):
-        """Returns a list of share group replica members."""
-        context = req.environ['manila.context']
-
-        replicas = self.share_group_api.get_all_share_group_replica_members(
-            context, id)
-
-        limited_list = common.limited(replicas, req)
-
-        replicas = self._view_builder.member_list(req, limited_list)
-        return replicas
-
     def _update(self, *args, **kwargs):
         db.share_group_replica_update(*args, **kwargs)
 
     @wsgi.Controller.api_version(MIN_SUPPORTED_API_VERSION, experimental=True)
     @wsgi.action('reset_status')
-    def share_group_replica_reset_status(self, req, id, body):
+    def reset_status(self, req, id, body):
+        """Resets the 'status' attribute in the database."""
         return self._reset_status(req, id, body)
 
     def _get(self, *args, **kwargs):
@@ -189,8 +177,67 @@ class ShareGroupReplicaController(wsgi.Controller, wsgi.AdminActionsMixin):
 
     @wsgi.Controller.api_version(MIN_SUPPORTED_API_VERSION, experimental=True)
     @wsgi.action('force_delete')
-    def share_group_replica_force_delete(self, req, id, body):
+    def force_delete(self, req, id, body):
+        """Force deletion on the database, attempt on the backend."""
         return self._force_delete(req, id, body)
+
+    @wsgi.Controller.api_version(MIN_SUPPORTED_API_VERSION, experimental=True)
+    @wsgi.action('promote')
+    @wsgi.response(202)
+    @wsgi.Controller.authorize
+    def promote(self, req, id, body):
+        """Promotes a share group replica to active state."""
+        context = req.environ['manila.context']
+
+        try:
+            group_replica = db.share_group_replica_get(context, id)
+        except exception.ShareGroupReplicaNotFound:
+            msg = _('No share group replica exists with ID %s.')
+            raise exc.HTTPNotFound(explanation=msg % id)
+
+        if group_replica.get('replica_state'
+                             ) == constants.REPLICA_STATE_ACTIVE:
+            return webob.Response(status_int=http_client.OK)
+
+        try:
+            group_replica = self.share_group_api.promote_share_group_replica(
+                context, group_replica)
+        except exception.ShareGroupReplicationException as e:
+            raise exc.HTTPBadRequest(explanation=six.text_type(e))
+        except exception.AdminRequired as e:
+            raise exc.HTTPForbidden(explanation=six.text_type(e))
+
+        return self._view_builder.detail(req, group_replica)
+
+    @wsgi.Controller.api_version(MIN_SUPPORTED_API_VERSION, experimental=True)
+    @wsgi.action('reset_replica_state')
+    @wsgi.Controller.authorize
+    def reset_replica_state(self, req, id, body):
+        """Resets the 'replica_state' attribute in the database."""
+        return self._reset_status(req, id, body, status_attr='replica_state')
+
+    @wsgi.Controller.api_version(MIN_SUPPORTED_API_VERSION, experimental=True)
+    @wsgi.action('resync')
+    @wsgi.response(202)
+    @wsgi.Controller.authorize
+    def resync(self, req, id, body):
+        """Attempts to update/sync the replica with its source."""
+        context = req.environ['manila.context']
+        try:
+            group_replica = db.share_group_replica_get(context, id)
+        except exception.ShareGroupReplicaNotFound:
+            msg = _('No share group replica exists with ID %s.')
+            raise exc.HTTPNotFound(explanation=msg % id)
+
+        if group_replica.get('replica_state'
+                             ) == constants.REPLICA_STATE_ACTIVE:
+            return webob.Response(status_int=http_client.OK)
+
+        try:
+            self.share_group_api.update_share_group_replica(context,
+                                                            group_replica)
+        except exception.InvalidHost as e:
+            raise exc.HTTPBadRequest(explanation=six.text_type(e))
 
 
 def create_resource():

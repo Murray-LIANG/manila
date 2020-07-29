@@ -436,8 +436,10 @@ class ShareInstance(BASE, ManilaBase):
         lazy="subquery",
         foreign_keys=share_group_instance_id,
         backref="share_group_replica_members",
-        primaryjoin=('ShareGroupInstance.id == '
-                     'ShareInstance.share_group_instance_id'),
+        primaryjoin=(
+            'and_('
+            'ShareGroupInstance.id == ShareInstance.share_group_instance_id, '
+            'ShareInstance.deleted == "False")'),
         join_depth=2,
     )
 

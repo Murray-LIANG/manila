@@ -30,32 +30,6 @@ class ShareGroupReplicaViewBuilder(common.ViewBuilder):
         """Detailed view of a list of share_group_replicas."""
         return self._list_view(self.detail, request, share_group_replicas)
 
-    @staticmethod
-    def _member_dict(share_replica):
-        return {
-            'id': share_replica.get('id'),
-            'share_group_replica_id':
-                share_replica.get('share_group_instance_id'),
-            'share_id': share_replica.get('share_id'),
-            'status': share_replica.get('status'),
-            'replica_state': share_replica.get('replica_state'),
-        }
-
-    def member_list(self, request, members):
-        """Show a list of share_replicas as members of share_group_replica."""
-
-        members_dict = {
-            'share_group_replica_members':
-                [self._member_dict(share_replica) for share_replica in members]
-        }
-
-        members_links = self._get_collection_links(request, members,
-                                                   'share_group_replica_id')
-        if members_links:
-            members_dict['share_group_replica_members_links'] = members_links
-
-        return members_dict
-
     def summary(self, request, share_group_replica):
         """Generic, non-detailed view of a share group replica."""
         return {
@@ -67,6 +41,17 @@ class ShareGroupReplicaViewBuilder(common.ViewBuilder):
                 'links':
                     self._get_links(request, share_group_replica.get('id')),
             }
+        }
+
+    @staticmethod
+    def _member_dict(share_replica):
+        return {
+            'id': share_replica.get('id'),
+            'share_group_replica_id':
+                share_replica.get('share_group_instance_id'),
+            'share_id': share_replica.get('share_id'),
+            'status': share_replica.get('status'),
+            'replica_state': share_replica.get('replica_state'),
         }
 
     def detail(self, request, share_group_replica):

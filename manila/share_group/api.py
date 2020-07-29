@@ -797,27 +797,12 @@ class API(base.Base):
         LOG.info('Deleting share group replica %s.', group_replica_id)
 
         self.db.share_group_replica_update(
-            context, group_replica_id,
-            {
-                'status': constants.STATUS_DELETING,
-                'terminated_at': timeutils.utcnow(),
-            }
-        )
+            context, group_replica_id, {'status': constants.STATUS_DELETING})
 
         if not group_replica['host']:
-            # Delete any snapshot instances created on the database
-            share_replicas = group_replica.get('share_group_replica_members',
-                                               [])
-            for share_replica in share_replicas:
-                replica_snapshots = (
-                    self.db.share_snapshot_instance_get_all_with_filters(
-                        context, {'share_instance_ids': share_replica['id']})
-                )
-                for snapshot in replica_snapshots:
-                    self.db.share_snapshot_instance_delete(context,
-                                                           snapshot['id'])
+            # TODO(RyanLiang): handle snapshots of shares in the group.
 
-            # Delete the group replica from the database
+            # Delete the group replica from the database.
             self.db.share_group_replica_delete(context, group_replica_id)
         else:
 
@@ -830,3 +815,35 @@ class API(base.Base):
                                             share_group_replica_id):
         return self.db.share_group_replica_members_get_all(
             context, share_group_replica_id)
+
+    def promote_share_group_replica(self, context, share_group_replica):
+        share_group_replica_id = share_group_replica['id']
+        if share_group_replica.get('status') != constants.STATUS_AVAILABLE:
+            raise exception.ReplicationException(
+                reason='Share group replica %(id)s must be in available state '
+                       'to be promoted.' % {'id': share_group_replica_id})
+
+        if (share_group_replica['replica_state'] in (
+                constants.REPLICA_STATE_OUT_OF_SYNC, constants.STATUS_ERROR)
+                and not context.is_admin):
+            raise exception.AdminRequired(
+                message=_('Promoting a share group replica with '
+                          '"replica_state": %s requires administrator '
+                          'privileges.') % share_group_replica['replica_state']
+            )
+
+        self.db.share_group_replica_update(
+            context, share_group_replica_id,
+            {'status': constants.STATUS_REPLICATION_CHANGE})
+
+        self.share_rpcapi.promote_share_group_replica(context,
+                                                      share_group_replica)
+        return self.db.share_group_replica_get(context, share_group_replica_id)
+
+    def update_share_group_replica(self, context, share_group_replica):
+        if not share_group_replica['host']:
+            raise exception.InvalidHost(reason='Share group replica does not '
+                                               'have a valid host.')
+
+        self.share_rpcapi.update_share_group_replica(context,
+                                                     share_group_replica)

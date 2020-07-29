@@ -1879,7 +1879,7 @@ class ShareManager(manager.SchedulerDependentManager):
             # replicated in the future, set its replica_state to active.
             if (share.get('replication_type') or
                     (share_group_instance
-                     and share_group_instance.get('group_replication_type'))):
+                     and share_group_instance.get('replica_state'))):
                 updates['replica_state'] = constants.REPLICA_STATE_ACTIVE
 
             self.db.share_instance_update(context, share_instance_id, updates)
@@ -1927,9 +1927,20 @@ class ShareManager(manager.SchedulerDependentManager):
         return snapshots
 
     def _db_update_share_replica(self, context, share_replica_id,
+                                 replica_state=None, status=None,
+                                 progress=None, cast_rules_to_readonly=None,
                                  export_locations=None,
-                                 replica_state=None,
                                  access_rules_status=None):
+        update = {}
+        if replica_state is not None:
+            update['replica_state'] = replica_state
+        if status is not None:
+            update['status'] = status
+        if progress is not None:
+            update['progress'] = progress
+        if update:
+            self.db.share_replica_update(context, share_replica_id, update)
+
         if export_locations:
             if isinstance(export_locations, list):
                 self.db.share_export_locations_update(context,
@@ -1939,19 +1950,10 @@ class ShareManager(manager.SchedulerDependentManager):
                 LOG.warning('Invalid export locations passed to the share '
                             'manager.')
 
-        if replica_state:
-            self.db.share_replica_update(context, share_replica_id,
-                                         {'status': constants.STATUS_AVAILABLE,
-                                          'replica_state': replica_state,
-                                          'progress': '100%'})
-
         if access_rules_status:
             self._update_share_replica_access_rules_state(context,
                                                           share_replica_id,
                                                           access_rules_status)
-        else:
-            self._update_share_replica_access_rules_state(
-                context, share_replica_id, constants.STATUS_ACTIVE)
 
     @add_hooks
     @utils.require_driver_initialized
@@ -2086,11 +2088,15 @@ class ShareManager(manager.SchedulerDependentManager):
                     resource_id=share_replica['id'],
                     exception=excep)
 
+        replica_state = replica_ref.get('replica_state')
         self._db_update_share_replica(
             context, share_replica['id'],
+            replica_state=replica_state,
+            status=constants.STATUS_AVAILABLE if replica_state else None,
+            progress='100%' if replica_state else None,
             export_locations=replica_ref.get('export_locations'),
-            replica_state=replica_ref.get('replica_state'),
-            access_rules_status=replica_ref.get('access_rules_status'))
+            access_rules_status=replica_ref.get('access_rules_status',
+                                                constants.ACCESS_STATE_ACTIVE))
 
         LOG.info("Share replica %s created successfully.",
                  share_replica['id'])
@@ -4224,6 +4230,9 @@ class ShareManager(manager.SchedulerDependentManager):
             self.db.share_instance_update(
                 context, share['id'], {'status': constants.STATUS_AVAILABLE})
         updates = {'status': status,
+                   'progress':
+                       '100%' if status == constants.STATUS_AVAILABLE
+                       else '0%',
                    'created_at': now,
                    'availability_zone_id':
                        self._get_az_for_share_group_instance(
@@ -4435,20 +4444,29 @@ class ShareManager(manager.SchedulerDependentManager):
         LOG.info("Share group snapshot %s: deleted successfully",
                  share_group_snapshot_id)
 
-    def _db_update_share_group_replica(self, context, share_group_replica_id,
-                                       replica_state=None):
-        if replica_state:
-            self.db.share_group_replica_update(
-                context, share_group_replica_id,
-                {'status': constants.STATUS_AVAILABLE,
-                 'replica_state': replica_state,
-                 'progress': '100%',
-                 'updated_at': timeutils.utcnow()})
+    def _get_member_replicas(self, share_group_replica):
+        share_replicas = [
+            self._get_share_instance_dict(r)
+            for r in share_group_replica.get('share_group_replica_members', [])
+        ]
+        share_replicas_all = {
+            share_replica['id']:
+                [self._get_share_instance_dict(context, replica)
+                 for replica in self.db.share_replicas_get_all_by_share(
+                    context, share_replica['share_id'],
+                    with_share_data=True, with_share_server=True)]
+            for share_replica in share_replicas
+        }
+        return share_replicas, share_replicas_all
 
     @utils.require_driver_initialized
     @locked_share_group_replica_operation
-    def create_share_group_replica(self, context, share_group_replica_id):
-        """Creates a share group replica."""
+    def create_share_group_replica(self, context, share_group_replica_id,
+                                   share_group_id=None):
+        """Creates a share group replica.
+
+        :param share_group_id: used in `locked_share_group_replica_operation`.
+        """
         context = context.elevated()
 
         def _set_group_replica_status_error(detail=None, ex=None):
@@ -4456,7 +4474,7 @@ class ShareManager(manager.SchedulerDependentManager):
                 context, share_group_replica_id,
                 {'status': constants.STATUS_ERROR,
                  'replica_state': constants.STATUS_ERROR,
-                 'updated_at': timeutils.utcnow()})
+                 'progress': '0%'})
             self.message_api.create(
                 context, message_field.Action.CREATE,
                 share_group_replica['project_id'],
@@ -4517,17 +4535,9 @@ class ShareManager(manager.SchedulerDependentManager):
         group_replicas = self.db.share_group_replica_get_all_by_share_group(
             context, share_group_id, with_share_group_data=True,
             with_share_server=True)
-        share_replicas = share_group_replica.get('share_group_replica_members',
-                                                 [])
-        share_replicas_all = {
-            share_replica['id']:
-                [self._get_share_instance_dict(context, replica)
-                 for replica in self.db.share_replicas_get_all_by_share(
-                    context, share_replica['share_id'],
-                    with_share_data=True, with_share_server=True
-                )]
-            for share_replica in share_replicas
-        }
+
+        share_replicas, share_replicas_all = self._get_member_replicas(
+            share_group_replica)
 
         share_access_rules_all = {
             share_replica['id']:
@@ -4573,6 +4583,11 @@ class ShareManager(manager.SchedulerDependentManager):
                 LOG.error('Share group replica %s failed on creation.',
                           share_group_replica_id)
                 for share_replica in share_replicas:
+                    self.db.share_replica_update(
+                        context, share_replica['id'],
+                        {'status': constants.STATUS_ERROR,
+                         'replica_state': constants.STATUS_ERROR,
+                         'progress': '0%'})
                     self._update_share_replica_access_rules_state(
                         context, share_replica['id'], constants.STATUS_ERROR)
                 _set_group_replica_status_error(ex=e)
@@ -4590,10 +4605,14 @@ class ShareManager(manager.SchedulerDependentManager):
 
             self._db_update_share_replica(
                 context, share_replica_update['id'],
+                replica_state=share_replica_update.get(
+                    'replica_state', constants.REPLICA_STATE_IN_SYNC),
+                status=share_replica_update.get('status',
+                                                constants.STATUS_AVAILABLE),
+                progress=share_replica_update.get('progress', '100%'),
                 export_locations=share_replica_update.get('export_locations'),
-                replica_state=share_replica_update.get('replica_state'),
                 access_rules_status=share_replica_update.get(
-                    'access_rules_status'))
+                    'access_rules_status', constants.ACCESS_STATE_ACTIVE))
 
         if not_updated_share_replica_ids:
             LOG.warning('All share replicas as the member of the share group '
@@ -4601,10 +4620,13 @@ class ShareManager(manager.SchedulerDependentManager):
                         'These ones (%s) were not.',
                         ','.join(not_updated_share_replica_ids))
 
+        update = {'status': constants.STATUS_AVAILABLE,
+                  'replica_state': constants.REPLICA_STATE_IN_SYNC,
+                  'progress': '100%'}
         if group_replica_update:
-            self._db_update_share_group_replica(
-                context, share_group_replica_id,
-                replica_state=group_replica_update.get('replica_state'))
+            update.update(group_replica_update)
+        self.db.share_group_replica_update(context, share_group_replica_id,
+                                           update)
 
         LOG.info('Share group replica %s created successfully.',
                  share_group_replica_id)
@@ -4614,7 +4636,11 @@ class ShareManager(manager.SchedulerDependentManager):
     @utils.require_driver_initialized
     @locked_share_group_replica_operation
     def delete_share_group_replica(self, context, share_group_replica_id,
-                                   force=False):
+                                   share_group_id=None, force=False):
+        """Deletes a share group replica.
+
+        :param share_group_id: used in `locked_share_group_replica_operation`.
+        """
         LOG.info('Share group replica %s: deleting', share_group_replica_id)
 
         context = context.elevated()
@@ -4627,8 +4653,7 @@ class ShareManager(manager.SchedulerDependentManager):
             self.db.share_group_replica_update(
                 context, share_group_replica_id,
                 {'status': constants.STATUS_ERROR_DELETING,
-                 'replica_state': constants.STATUS_ERROR,
-                 'updated_at': timeutils.utcnow()})
+                 'replica_state': constants.STATUS_ERROR})
             self.message_api.create(
                 context, message_field.Action.DELETE,
                 group_replica['project_id'],
@@ -4638,7 +4663,8 @@ class ShareManager(manager.SchedulerDependentManager):
                 exception=ex
             )
 
-        share_replicas = group_replica.get('share_group_replica_members', [])
+        share_replicas, share_replicas_all = self._get_member_replicas(
+            group_replica)
         for share_replica in share_replicas:
             try:
                 self._delete_all_rules_from_share_replica(context,
@@ -4656,15 +4682,6 @@ class ShareManager(manager.SchedulerDependentManager):
             with_share_group_data=True,
             with_share_server=True
         )
-
-        share_replicas_dict = {
-            share_replica['id']:
-                [self._get_share_instance_dict(context, replica)
-                 for replica in self.db.share_replicas_get_all_by_share(
-                    context, share_replica['share_id'],
-                    with_share_data=True, with_share_server=True)]
-            for share_replica in share_replicas
-        }
 
         share_replicas_snapshots = {
             share_replica['id']:
@@ -4685,7 +4702,7 @@ class ShareManager(manager.SchedulerDependentManager):
             group_replica_update, share_replicas_update = (
                 self.driver.delete_share_group_replica(
                     context, group_replica, group_replicas,
-                    share_replicas, share_replicas_dict,
+                    share_replicas, share_replicas_all,
                     share_replicas_snapshots, share_server=share_server))
 
             update_replica_members = False
@@ -4698,7 +4715,6 @@ class ShareManager(manager.SchedulerDependentManager):
                 update_replica_members = True
 
             if group_replica_update:
-                group_replica_update['updated_at'] = timeutils.utcnow()
                 group_replica = self.db.share_group_replica_update(
                     context, group_replica['id'], group_replica_update,
                     with_replica_members=update_replica_members)
@@ -4730,6 +4746,339 @@ class ShareManager(manager.SchedulerDependentManager):
 
         LOG.info('Share group replica %s: deleted successfully',
                  share_group_replica_id)
+
+    @utils.require_driver_initialized
+    @locked_share_group_replica_operation
+    def promote_share_group_replica(self, context, share_group_replica_id,
+                                    share_group_id=None):
+        """Promotes a share group replica to active state.
+
+        :param share_group_id: used in `locked_share_group_replica_operation`.
+        """
+
+        def _set_group_and_member_replicas_status(group_replica, status,
+                                                  share_replicas=None,
+                                                  detail=None, ex=None):
+            for share_replica in share_replicas or []:
+                self.db.share_replica_update(context, share_replica['id'],
+                                             {'status': status})
+                self.message_api.create(
+                    context,
+                    message_field.Action.PROMOTE,
+                    share_replica['project_id'],
+                    resource_type=message_field.Resource.SHARE_REPLICA,
+                    resource_id=share_replica['id'],
+                    exception=ex)
+
+            self.db.share_group_replica_update(context, group_replica['id'],
+                                               {'status': status})
+            self.message_api.create(
+                context, message_field.Action.CREATE,
+                group_replica['project_id'],
+                resource_type=message_field.Resource.SHARE_GROUP_REPLICA,
+                resource_id=group_replica['id'],
+                detail=detail,
+                exception=ex
+            )
+
+        LOG.info('Share group replica %s: promoting to active',
+                 share_group_replica_id)
+        context = context.elevated()
+
+        group_replica = self.db.share_group_replica_get(
+            context, share_group_replica_id, with_share_group_data=True,
+            with_replica_members=True)
+
+        # Get the active replica before promoting.
+        group_replicas = self.db.share_group_replica_get_all_by_share_group(
+            context, share_group_id, with_share_group_data=True,
+            with_share_server=True)
+        try:
+            active_group_replica = [r for r in group_replicas
+                                    if r['replica_state'] ==
+                                    constants.REPLICA_STATE_ACTIVE][0]
+        except IndexError:
+            _set_group_and_member_replicas_status(
+                group_replica, constants.STATUS_AVAILABLE,
+                detail=message_field.Detail.NO_ACTIVE_GROUP_REPLICA)
+            raise exception.ShareGroupReplicationException(
+                reason=('Share group %(group)s has no replica with '
+                        '"replica_state" set to active. Promoting %(replica)s '
+                        'is not possible.'
+                        ) % {'group': share_group_id,
+                             'replica': share_group_replica_id})
+
+        share_replicas, share_replicas_all = self._get_member_replicas(
+            group_replica)
+
+        share_access_rules_all = {
+            share_replica['id']:
+                self.db.share_access_get_all_for_share(
+                    context, share_replica['share_id'])
+            for share_replica in share_replicas
+        }
+
+        share_server = self._get_share_server(context, group_replica)
+
+        try:
+            group_replicas_update, share_replicas_update = (
+                self.driver.promote_share_group_replica(
+                    context, group_replica, group_replicas, share_replicas,
+                    share_replicas_all, share_access_rules_all,
+                    share_server=share_server)
+            )
+        except Exception as ex:
+            with excutils.save_and_reraise_exception():
+                # NOTE(RyanLiang): If the driver throws an exception at
+                # this stage, there is a good chance that the replicas are
+                # somehow altered on the backend. We loop through the share
+                # group replicas and all their member share replicas and set
+                # their 'status's to 'error' and leave the 'replica_state'
+                # unchanged. This also changes the 'status' of the replica that
+                # failed to promote to 'error'. The backend may choose to
+                # update the actual replica_state during the replica_monitoring
+                # stage.
+                for group_replica in group_replicas:
+                    share_replicas = group_replica.get(
+                        'share_group_replica_members', [])
+                    _set_group_and_member_replicas_status(
+                        group_replica, constants.STATUS_ERROR,
+                        share_replicas=share_replicas, ex=ex)
+
+        # TODO(RyanLiang): set creating share group snapshot to error.
+
+        # Update the share group replicas returned by the driver.
+        group_replica_ids = {r['id']
+                             for r in [group_replica, active_group_replica]}
+        for update in group_replicas_update or []:
+            if update['id'] not in group_replica_ids:
+                LOG.info('Share group replica %s to update is neither the '
+                         'active group replica nor the promoting one. '
+                         'Updating skipped.', update['id'])
+                continue
+            group_replica_ids.remove(update['id'])
+            if update['id'] == share_group_replica_id:
+                default_replica_state = constants.REPLICA_STATE_ACTIVE
+            else:
+                default_replica_state = constants.REPLICA_STATE_OUT_OF_SYNC
+            update['replica_state'] = update.get('replica_state',
+                                                 default_replica_state)
+            default_status = (
+                constants.STATUS_ERROR
+                if update['replica_state'] == constants.STATUS_ERROR
+                else constants.STATUS_AVAILABLE)
+            update['status'] = update.get('status', default_status)
+            self.db.share_group_replica_update(context, update['id'], update)
+
+        # Update the share group replicas not returned by the driver.
+        for group_replica_id in group_replica_ids:
+            update = {'status': constants.STATUS_AVAILABLE}
+            if group_replica_id == share_group_replica_id:
+                update['replica_state'] = constants.REPLICA_STATE_ACTIVE
+            else:
+                update['replica_state'] = constants.REPLICA_STATE_OUT_OF_SYNC
+            self.db.share_group_replica_update(context, update['id'], update)
+
+        # Update all members - share replicas, which are returned by the
+        # driver.
+        share_replica_ids_promoting = {r['id'] for r in share_replicas}
+
+        share_replicas_active, _ = self._get_member_replicas(
+            active_group_replica)
+        share_replica_ids_active = {r['id'] for r in share_replicas_active}
+
+        for update in share_replicas_update or []:
+            replica_id = update['id']
+            if replica_id not in (share_replica_ids_active
+                                  | share_replica_ids_promoting):
+                LOG.info('Share replica %s to update is neither the member of '
+                         'the active group replica nor the member of the '
+                         'promoting one. Updating skipped.', replica_id)
+                continue
+
+            if replica_id in share_replica_ids_promoting:
+                share_replica_ids_promoting.remove(replica_id)
+                default_replica_state = constants.REPLICA_STATE_ACTIVE
+                default_cast_rules_to_readonly = False
+            else:
+                # For the share replica of original active group replica.
+                share_replica_ids_active.remove(replica_id)
+                default_replica_state = constants.REPLICA_STATE_OUT_OF_SYNC
+                if (group_replica.get('group_replication_type')
+                        == constants.REPLICATION_TYPE_READABLE):
+                    default_cast_rules_to_readonly = True
+                else:
+                    default_cast_rules_to_readonly = False
+
+            update['replica_state'] = update.get('replica_state',
+                                                 default_replica_state)
+            default_status = (
+                constants.STATUS_ERROR
+                if update['replica_state'] == constants.STATUS_ERROR
+                else constants.STATUS_AVAILABLE)
+            update['status'] = update.get('status', default_status)
+            update['cast_rules_to_readonly'] = update.get(
+                'cast_rules_to_readonly', default_cast_rules_to_readonly)
+
+            self._db_update_share_replica(
+                context, replica_id, replica_state=update['replica_state'],
+                status=update['status'], progress='100%',
+                cast_rules_to_readonly=update['cast_rules_to_readonly'],
+                export_locations=update.get('export_locations'),
+                access_rules_status=update.get('access_rules_status'),
+            )
+
+        # Update all members - share replicas, which are not returned by the
+        # driver.
+        for replica_id in (share_replica_ids_promoting
+                           | share_replica_ids_active):
+            if replica_id in share_replica_ids_promoting:
+                default_replica_state = constants.REPLICA_STATE_ACTIVE
+                default_cast_rules_to_readonly = False
+            else:
+                # For the share replica of original active group replica.
+                default_replica_state = constants.REPLICA_STATE_OUT_OF_SYNC
+                if (group_replica.get('group_replication_type')
+                        == constants.REPLICATION_TYPE_READABLE):
+                    default_cast_rules_to_readonly = True
+                else:
+                    default_cast_rules_to_readonly = False
+            self._db_update_share_replica(
+                context, replica_id,
+                replica_state=default_replica_state,
+                status=constants.STATUS_AVAILABLE, progress='100%',
+                cast_rules_to_readonly=default_cast_rules_to_readonly,
+            )
+
+        LOG.info('Share group replica %s: promoted to active state '
+                 'successfully.', share_group_replica_id)
+
+    @locked_share_group_replica_operation
+    def _update_share_group_replica(self, context, group_replica,
+                                    share_group_id=None):
+        """Updates a share group replica status.
+
+        :param share_group_id: used in `locked_share_group_replica_operation`.
+        """
+        group_replica_id = group_replica['id']
+
+        try:
+            group_replica = self.db.share_group_replica_get(
+                context, group_replica_id, with_share_group_data=True,
+                with_share_server=True, with_replica_members=True)
+        except exception.ShareGroupReplicaNotFound:
+            # Share group replica may have been deleted, nothing to do here
+            return
+
+        # Skip if the share group replica is active or under transition.
+        if (group_replica['replica_state'] in constants.REPLICA_STATE_ACTIVE
+                or group_replica['status'] in constants.TRANSITIONAL_STATUSES):
+            return
+
+        group_replicas = self.db.share_group_replica_get_all_by_share_group(
+            context, share_group_id, with_share_group_data=True,
+            with_share_server=True)
+
+        share_replicas, share_replicas_all = self._get_member_replicas(
+            group_replica)
+
+        share_access_rules_all = {
+            share_replica['id']:
+                self.db.share_access_get_all_for_share(
+                    context, share_replica['share_id'])
+            for share_replica in share_replicas
+        }
+
+        share_server = self._get_share_server(context, group_replica)
+
+        LOG.debug('Updating status of share group replica %s.',
+                  group_replica_id)
+
+        # TODO(RyanLiang): any group snapshot need to handle?
+
+        try:
+            group_replica_state, share_replica_states = (
+                self.driver.update_share_group_replica_state(
+                    context, group_replica, group_replicas, share_replicas,
+                    share_replicas_all, share_access_rules_all,
+                    share_server=share_server))
+        except Exception as ex:
+            LOG.exception('Driver error when updating replica state for share '
+                          'group replica %s.', group_replica_id)
+            self.db.share_group_replica_update(
+                context, group_replica_id,
+                {'replica_state': constants.STATUS_ERROR,
+                 'status': constants.STATUS_ERROR})
+            self.message_api.create(
+                context,
+                message_field.Action.UPDATE,
+                group_replica['project_id'],
+                resource_type=message_field.Resource.SHARE_GROUP_REPLICA,
+                resource_id=group_replica_id,
+                exception=ex)
+            return
+
+        def _is_replica_state_valid(state, replica_type, replica_id):
+            if state and state not in (constants.REPLICA_STATE_IN_SYNC,
+                                       constants.REPLICA_STATE_OUT_OF_SYNC,
+                                       constants.STATUS_ERROR):
+                LOG.warning('Replica state of %(type)s %(id)s cannot be set '
+                            'to %(state)s. Replica state DB updating skipped.',
+                            {'type': replica_type, 'id': replica_id,
+                             'state': state})
+                return False
+            return state is not None
+
+        if _is_replica_state_valid(group_replica_state, 'share group replica',
+                                   group_replica_id):
+            self.db.share_group_replica_update(
+                context, group_replica_id,
+                {'replica_state': group_replica_state})
+
+        for state_update in share_replica_states or []:
+            try:
+                share_replica_id = state_update['id']
+                share_replica_state = state_update['replica_state']
+                if _is_replica_state_valid(share_replica_state,
+                                           'share replica', share_replica_id):
+                    self.db.share_replica_update(
+                        context, share_replica_id,
+                        {'replica_state': share_replica_state})
+            except KeyError as e:
+                LOG.warning('Replica state update returned by driver '
+                            '"%(update)s" is invalid. Replica state DB '
+                            'updating skipped. Error: %(ex)s.',
+                            {'update': state_update, 'ex': e})
+
+        LOG.info('Replica state of share group replica %s updated '
+                 'successfully.', group_replica_id)
+
+    @utils.require_driver_initialized
+    def update_share_group_replica(self, context, share_group_replica_id):
+        group_replica = self.db.share_group_replica_get(
+            context, share_group_replica_id, with_share_group_data=True,
+            with_share_server=True, with_replica_members=True)
+        self._update_share_group_replica(
+            context, group_replica,
+            share_group_id=group_replica['share_group_id'])
+
+    @periodic_task.periodic_task(spacing=CONF.replica_state_update_interval)
+    @utils.require_driver_initialized
+    def periodic_share_group_replica_update(self, context):
+        LOG.debug('Updating status of share group replicas and their member '
+                  'share replicas.')
+        group_replicas = self.db.share_group_replica_get_all(
+            context, with_share_group_data=True, with_replica_members=True)
+
+        # Filter only replicas belonging to this backend.
+        def on_this_backend(r):
+            return (share_utils.extract_host(r['host']) ==
+                    share_utils.extract_host(self.host))
+
+        for group_replica in filter(on_this_backend, group_replicas):
+            self._update_share_group_replica(
+                context, group_replica,
+                share_group_id=group_replica['share_group_id'])
 
     def _get_share_server_dict(self, context, share_server):
         share_server_ref = {

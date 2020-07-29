@@ -977,9 +977,45 @@ class UnityStorageConnection(driver.StorageConnection):
                                   conf.emc_nas_login,
                                   conf.emc_nas_password)
 
+    @staticmethod
+    def _build_share_replicas_update(share_replicas,
+                                     share_replicas_all_dict, fs_replications,
+                                     with_export_locations=False,
+                                     with_access_rules_status=False):
+        share_replicas_update = []
+        for share_replica in share_replicas:
+            # Both shares on Unity for active and dr replica are with the same
+            # name which is the active replica's id and it's different from the
+            # dr replica's id. So, we need to use the active share replica's id
+            # to locate the share of dr replica and its filesystem on unity.
+            # Filesystem's name and share's are same on unity.
+            active_share_replica = [
+                r for r in share_replicas_all_dict[share_replica['id']]
+                if r['replica_state'] == const.REPLICA_STATE_ACTIVE
+            ][0]
+
+            fs_name = active_share_replica['id']
+            replica_state = (const.REPLICA_STATE_IN_SYNC
+                             if fs_replications[fs_name].is_in_sync
+                             else const.REPLICA_STATE_OUT_OF_SYNC)
+
+            update = {'id': fs_name, 'replica_state': replica_state}
+            if with_export_locations:
+                # Copy the active share replica's export_locations to the dr
+                # replica. Because the dr replica's id is different from the
+                # name on Unity, we need to use export_locations to locate the
+                # correct share on Unity.
+                update['export_locations'] = active_share_replica.get(
+                    'export_locations')
+            if with_access_rules_status:
+                update['access_rules_status'] = const.ACCESS_STATE_ACTIVE
+            share_replicas_update.append(update)
+        return share_replicas_update
+
     def create_share_group_replica(self, context,
-                                   new_group_replica, group_replicas,
-                                   new_share_replicas, share_replicas_dict,
+                                   group_replica_creating, group_replicas_all,
+                                   share_replicas_creating,
+                                   share_replicas_all_dict,
                                    share_access_rules_dict,
                                    share_replicas_snapshots_dict,
                                    share_server=None):
@@ -996,7 +1032,7 @@ class UnityStorageConnection(driver.StorageConnection):
         # 1) share_server is None if DHSS=False, get the nas server from the
         # option `unity_replication_source_nas_server`.
         # 2) otherwise, get the nas server from the share_server.
-        active_replica = share_utils.get_active_replica(group_replicas)
+        active_replica = share_utils.get_active_replica(group_replicas_all)
         if active_replica is None:
             raise exception.InvalidInput(
                 reason='No active replica in the share group replicas.')
@@ -1008,14 +1044,14 @@ class UnityStorageConnection(driver.StorageConnection):
                 raise exception.BadConfigurationException(
                     reason='unity_replication_source_nas_server is required '
                            'in DHSS=False mode.')
-            active_nas_server_name = self.replication_source_nas_server
+            nas_server_name = self.replication_source_nas_server
         else:
-            active_nas_server_name = share_server['id']
+            nas_server_name = share_server['id']
 
-        dr_pool_name = share_utils.extract_host(new_group_replica['host'],
+        dr_pool_name = share_utils.extract_host(group_replica_creating['host'],
                                                 level='pool')
         nas_rep, fs_reps = active_client.enable_replication(
-            self.client, active_nas_server_name, dr_pool_name,
+            self.client, nas_server_name, dr_pool_name,
             self.replication_rpo)
 
         group_replica_update = {
@@ -1024,42 +1060,18 @@ class UnityStorageConnection(driver.StorageConnection):
                 else const.REPLICA_STATE_OUT_OF_SYNC,
         }
 
-        share_replicas_update = []
-        for new_share_replica in new_share_replicas:
-            # The new share replica's name is the same as the active share
-            # replica's on unity but different from the Manila share id.
-            # Need to use the active share replica's name to locate the share
-            # and its filesystem on unity.
-            # Filesystem and share names are same on unity.
-            active_share_replica = [
-                r for r in share_replicas_dict[new_share_replica['id']]
-                if r['replica_state'] == const.REPLICA_STATE_ACTIVE
-            ][0]
-
-            fs_name = active_share_replica['id']
-            replica_state = (const.REPLICA_STATE_IN_SYNC
-                             if fs_reps[fs_name].is_in_sync
-                             else const.REPLICA_STATE_OUT_OF_SYNC)
-            share_replicas_update.append(
-                {'id': fs_name,
-                 'replica_state': replica_state,
-                 # Copy the active share replica's export_locations to the dr
-                 # replica. Because the dr replica's id is different from the
-                 # name on Unity, we need to use export_locations to locate the
-                 # correct share on Unity.
-                 'export_locations':
-                     active_share_replica.get('export_locations'),
-                 'access_rules_status': const.ACCESS_STATE_ACTIVE}
-            )
+        share_replicas_update = self._build_share_replicas_update(
+            share_replicas_creating, share_replicas_all_dict, fs_reps,
+            with_export_locations=True, with_access_rules_status=True)
         return group_replica_update, share_replicas_update
 
     def delete_share_group_replica(self, context,
-                                   deleting_group_replica, group_replicas,
-                                   deleting_share_replicas,
-                                   share_replicas_dict,
+                                   group_replica_deleting, group_replicas_all,
+                                   share_replicas_deleting,
+                                   share_replicas_all_dict,
                                    share_replicas_snapshots,
                                    share_server=None):
-        active_replica = share_utils.get_active_replica(group_replicas)
+        active_replica = share_utils.get_active_replica(group_replicas_all)
         if active_replica is None:
             raise exception.InvalidInput(
                 reason='No active replica in the share group replicas.')
@@ -1071,8 +1083,82 @@ class UnityStorageConnection(driver.StorageConnection):
                 raise exception.BadConfigurationException(
                     reason='unity_replication_source_nas_server is required '
                            'in DHSS=False mode.')
-            active_nas_server_name = self.replication_source_nas_server
+            nas_server_name = self.replication_source_nas_server
         else:
-            active_nas_server_name = share_server['id']
-        active_client.disable_replication(self.client, active_nas_server_name)
+            nas_server_name = share_server['id']
+        active_client.disable_replication(self.client, nas_server_name)
         return None, None
+
+    def promote_share_group_replica(self, context,
+                                    group_replica_promoting,
+                                    group_replicas_all,
+                                    share_replicas_promoting,
+                                    share_replicas_all_dict,
+                                    share_access_rules_dict,
+                                    share_server=None):
+        """Promotes a nas server to 'active'.
+
+        Always fail over a replication session and resume it. So normally
+        there is no replication session under failed over status.
+
+        1. If the source system of the replication session is available, fail
+            it over with sync (aka. planned fail-over), then resume.
+        2. Otherwise, fail it over directly (aka. unplanned fail-over), then
+            resume.
+        """
+
+        active_replica = share_utils.get_active_replica(group_replicas_all)
+        if active_replica is None:
+            raise exception.InvalidInput(
+                reason='No active replica in the share group replicas.')
+        active_client = self._setup_replica_client(active_replica)
+
+        if share_server is None:
+            # DHSS=False mode.
+            if self.replication_source_nas_server is None:
+                raise exception.BadConfigurationException(
+                    reason='unity_replication_source_nas_server is required '
+                           'in DHSS=False mode.')
+            nas_server_name = self.replication_source_nas_server
+        else:
+            nas_server_name = share_server['id']
+
+        active_client.failover_replication(self.client, nas_server_name)
+        return None, None
+
+    def update_share_group_replica_state(self, context,
+                                         group_replica_updating,
+                                         group_replicas_all,
+                                         share_replicas_updating,
+                                         share_replicas_all_dict,
+                                         share_access_rules_dict,
+                                         share_server=None):
+        active_replica = share_utils.get_active_replica(group_replicas_all)
+        if active_replica is None:
+            raise exception.InvalidInput(
+                reason='No active replica in the share group replicas.')
+        active_client = self._setup_replica_client(active_replica)
+
+        if share_server is None:
+            # DHSS=False mode.
+            if self.replication_source_nas_server is None:
+                raise exception.BadConfigurationException(
+                    reason='unity_replication_source_nas_server is required '
+                           'in DHSS=False mode.')
+            nas_server_name = self.replication_source_nas_server
+        else:
+            nas_server_name = share_server['id']
+
+        nas_rep, fs_reps = active_client.get_nas_server_and_fs_replications(
+            self.client, nas_server_name)
+
+        if nas_rep is None and fs_reps is None:
+            return (const.REPLICA_STATE_OUT_OF_SYNC,
+                    [{'id': share_replica['id'],
+                      'replica_state': const.REPLICA_STATE_OUT_OF_SYNC}
+                     for share_replica in share_replicas_updating])
+
+        share_replicas_states = self._build_share_replica_state(
+            share_replicas_updating, share_replicas_all_dict, fs_reps,
+            with_export_locations=False, with_access_rules_status=False)
+        return nas_rep.is_in_sync, share_replicas_states

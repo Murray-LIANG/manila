@@ -99,6 +99,9 @@ class Detail(object):
         '019',
         _("An 'active' replica must exist in 'available' state to create a "
           "new replica for share group."))
+    NO_ACTIVE_GROUP_REPLICA = (
+        '020', _("Share group has no replica with 'replica_state' set to "
+                 "'active'."))
 
     ALL = (UNKNOWN_ERROR,
            NO_VALID_HOST,
@@ -117,7 +120,9 @@ class Detail(object):
            DRIVER_FAILED_EXTEND,
            FILTER_CREATE_FROM_SNAPSHOT,
            DRIVER_FAILED_CREATING_FROM_SNAP,
-           DRIVER_REFUSED_SHRINK)
+           DRIVER_REFUSED_SHRINK,
+           NO_ACTIVE_AVAILABLE_GROUP_REPLICA,
+           NO_ACTIVE_GROUP_REPLICA)
 
     # Exception and detail mappings
     EXCEPTION_DETAIL_MAPPINGS = {

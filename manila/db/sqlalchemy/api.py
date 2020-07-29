@@ -4917,6 +4917,8 @@ def _share_group_instance_update(context, share_group_instance_id, values,
         context, share_group_instance_id, session=session,
         with_share_group_data=with_share_group_data,
         with_replica_members=with_replica_members)
+    if 'updated_at' not in values:
+        values['updated_at'] = timeutils.utcnow()
     share_group_instance.update(values)
     share_group_instance.save(session=session)
     return share_group_instance

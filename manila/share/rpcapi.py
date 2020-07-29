@@ -293,6 +293,7 @@ class ShareAPI(object):
         call_context.cast(
             context, 'create_share_group_replica',
             share_group_replica_id=share_group_replica['id'],
+            share_group_id=share_group_replica['share_group_id'],
         )
 
     def delete_share_group_replica(self, context, share_group_replica,
@@ -302,7 +303,24 @@ class ShareAPI(object):
         call_context.cast(
             context, 'delete_share_group_replica',
             share_group_replica_id=share_group_replica['id'],
+            share_group_id=share_group_replica['share_group_id'],
+            force=force,
         )
+
+    def promote_share_group_replica(self, context, share_group_replica):
+        host = utils.extract_host(share_group_replica['host'])
+        call_context = self.client.prepare(server=host, version='1.20')
+        call_context.cast(context,
+                          'promote_share_group_replica',
+                          share_group_replica_id=share_group_replica['id'],
+                          share_group_id=share_group_replica['share_group_id'])
+
+    def update_share_group_replica(self, context, share_group_replica):
+        host = utils.extract_host(share_group_replica['host'])
+        call_context = self.client.prepare(server=host, version='1.8')
+        call_context.cast(context,
+                          'update_share_group_replica',
+                          share_group_replica_id=share_group_replica['id'])
 
     def create_share_replica(self, context, share_replica, host,
                              request_spec, filter_properties):
