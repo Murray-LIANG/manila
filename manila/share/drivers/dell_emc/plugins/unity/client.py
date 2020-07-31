@@ -117,9 +117,9 @@ class UnityClient(object):
             return self.system.get_filesystem(name=share_name)
 
     @staticmethod
-    def delete_filesystem(filesystem):
+    def delete_filesystem(filesystem, force_snap_delete=False):
         try:
-            filesystem.delete()
+            filesystem.delete(force_snap_delete=force_snap_delete)
         except storops_ex.UnityResourceNotFoundError:
             LOG.info('Filesystem %s is already removed.', filesystem.name)
 
@@ -445,8 +445,14 @@ class UnityClient(object):
         fs_reps = {}
         for active_fs, dr_fs in UnityClient._zip_active_dr_filesystems(
                 active_nas_server.filesystems, dr_nas_server.filesystems):
-            fs_reps[active_fs.name] = active_fs.get_replications(
-                remote_system=remote_system, dst_filesystem=dr_fs)[0]
+            try:
+                fs_reps[active_fs.name] = active_fs.get_replications(
+                    remote_system=remote_system, dst_filesystem=dr_fs)[0]
+            except IndexError:
+                LOG.info('Replication session not exist from fs %(src)s to '
+                         'fs %(dst)s on unity %(remote)s.',
+                         {'src': active_fs.name, 'dst': dr_fs.name,
+                          'remote': remote_system.name})
         return fs_reps
 
     def _get_dr_nas_server_name(self, dr_client, active_nas_server_name):
@@ -533,7 +539,7 @@ class UnityClient(object):
         # shares on the dr destination nas server. They will be deleted
         # together with filesystems.
         for fs in dr_nas_server.filesystems or []:
-            dr_client.delete_filesystem(fs)
+            dr_client.delete_filesystem(fs, force_snap_delete=True)
         dr_client.delete_nas_server(dr_nas_server_name)
 
     def failover_replication(self, dr_client, nas_server_name):
@@ -588,8 +594,16 @@ class UnityClient(object):
             dr_client, active_nas_server.name)
         dr_nas_server = dr_client.get_nas_server(dr_nas_server_name)
         remote_system = self.get_remote_system(dr_client.get_serial_number())
-        nas_server_rep = active_nas_server.get_replications(
-            remote_system=remote_system, dst_nas_server=dr_nas_server)[0]
+        try:
+            nas_server_rep = active_nas_server.get_replications(
+                remote_system=remote_system, dst_nas_server=dr_nas_server)[0]
+        except IndexError:
+            LOG.info('Replication session not exist from nas server %(src)s '
+                     'to nas server %(dst)s on unity %(remote)s.',
+                     {'src': active_nas_server.name,
+                      'dst': dr_nas_server_name,
+                      'remote': remote_system.name})
+            return None, None
 
         return nas_server_rep, self._get_fs_replications(active_nas_server,
                                                          dr_nas_server,
