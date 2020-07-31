@@ -836,9 +836,16 @@ class API(base.Base):
             context, share_group_replica_id,
             {'status': constants.STATUS_REPLICATION_CHANGE})
 
+        for share_replica in share_group_replica.get(
+                'share_group_replica_members', []):
+            self.db.share_replica_update(
+                context, share_replica['id'],
+                {'status': constants.STATUS_REPLICATION_CHANGE})
+
         self.share_rpcapi.promote_share_group_replica(context,
                                                       share_group_replica)
-        return self.db.share_group_replica_get(context, share_group_replica_id)
+        return self.db.share_group_replica_get(context, share_group_replica_id,
+                                               with_replica_members=True)
 
     def update_share_group_replica(self, context, share_group_replica):
         if not share_group_replica['host']:

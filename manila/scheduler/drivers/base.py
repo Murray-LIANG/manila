@@ -79,7 +79,7 @@ def share_group_replica_update_db(context, share_group_replica_id, host):
     now = timeutils.utcnow()
     values = {'host': host, 'updated_at': now}
     return db.share_group_replica_update(context, share_group_replica_id,
-                                         values)
+                                         values, with_replica_members=True)
 
 
 class Scheduler(object):

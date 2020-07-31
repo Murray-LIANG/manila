@@ -1074,16 +1074,22 @@ class UnityStorageConnection(driver.StorageConnection):
                                    share_server=None):
         active_replica = share_utils.get_active_replica(group_replicas_all)
         if active_replica is None:
-            raise exception.InvalidInput(
-                reason='No active replica in the share group replicas.')
+            LOG.info('No active replica in the share group replicas. Share '
+                     'group replica %s deletion skipped.',
+                     group_replica_deleting['id'])
+            return None, None
         active_client = self._setup_replica_client(active_replica)
 
         if share_server is None:
             # DHSS=False mode.
             if self.replication_source_nas_server is None:
-                raise exception.BadConfigurationException(
-                    reason='unity_replication_source_nas_server is required '
-                           'in DHSS=False mode.')
+                LOG.info('unity_replication_source_nas_server is required in '
+                         'DHSS=False mode. Cannot locate the nas server on '
+                         'unity to delete the replication session. Resources '
+                         'related to share group replica %s maybe need to '
+                         'clean up on unity manually.',
+                         group_replica_deleting['id'])
+                return None, None
             nas_server_name = self.replication_source_nas_server
         else:
             nas_server_name = share_server['id']

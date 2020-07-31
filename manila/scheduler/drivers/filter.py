@@ -533,6 +533,10 @@ class FilterScheduler(base.Scheduler):
         updated_group_replica = base.share_group_replica_update_db(
             context, group_replica_id, host)
 
+        for share_replica in updated_group_replica.get(
+                'share_group_replica_members', []):
+            base.share_replica_update_db(context, share_replica['id'], host)
+
         # TODO(RyanLiang): add host retry check.
 
         self.share_rpcapi.create_share_group_replica(

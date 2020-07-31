@@ -3842,7 +3842,7 @@ def share_server_get_all_unused_deletable(context, host, updated_before):
     result = (_server_get_query(context)
               .filter_by(is_auto_deletable=True)
               .filter_by(host=host)
-              .filter(~models.ShareServer.share_groups.any())
+              .filter(~models.ShareServer.share_group_instances.any())
               .filter(~models.ShareServer.share_instances.any())
               .filter(models.ShareServer.status.in_(valid_server_status))
               .filter(models.ShareServer.updated_at < updated_before).all())

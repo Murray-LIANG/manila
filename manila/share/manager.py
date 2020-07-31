@@ -4886,7 +4886,8 @@ class ShareManager(manager.SchedulerDependentManager):
                 update['replica_state'] = constants.REPLICA_STATE_ACTIVE
             else:
                 update['replica_state'] = constants.REPLICA_STATE_OUT_OF_SYNC
-            self.db.share_group_replica_update(context, update['id'], update)
+            self.db.share_group_replica_update(context, group_replica_id,
+                                               update)
 
         # Update all members - share replicas, which are returned by the
         # driver.

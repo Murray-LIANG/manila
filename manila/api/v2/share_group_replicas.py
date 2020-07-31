@@ -190,7 +190,8 @@ class ShareGroupReplicaController(wsgi.Controller, wsgi.AdminActionsMixin):
         context = req.environ['manila.context']
 
         try:
-            group_replica = db.share_group_replica_get(context, id)
+            group_replica = db.share_group_replica_get(
+                context, id, with_replica_members=True)
         except exception.ShareGroupReplicaNotFound:
             msg = _('No share group replica exists with ID %s.')
             raise exc.HTTPNotFound(explanation=msg % id)
