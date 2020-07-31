@@ -4617,8 +4617,17 @@ class ShareManager(manager.SchedulerDependentManager):
         if not_updated_share_replica_ids:
             LOG.warning('All share replicas as the member of the share group '
                         'replica should be passed to the share manager. But '
-                        'These ones (%s) were not.',
+                        'these ones (%s) were not. Updating them with '
+                        'replica_state=out_of_sync, status=available, '
+                        'progress=100% and access_rules_status=active.',
                         ','.join(not_updated_share_replica_ids))
+        for share_replica_id in not_updated_share_replica_ids:
+            self._db_update_share_replica(
+                context, share_replica_id,
+                replica_state=constants.REPLICA_STATE_OUT_OF_SYNC,
+                status=constants.STATUS_AVAILABLE,
+                progress='100%',
+                access_rules_status=constants.ACCESS_STATE_ACTIVE)
 
         update = {'status': constants.STATUS_AVAILABLE,
                   'replica_state': constants.REPLICA_STATE_IN_SYNC,

@@ -999,7 +999,8 @@ class UnityStorageConnection(driver.StorageConnection):
                              if fs_replications[fs_name].is_in_sync
                              else const.REPLICA_STATE_OUT_OF_SYNC)
 
-            update = {'id': fs_name, 'replica_state': replica_state}
+            update = {'id': share_replica['id'],
+                      'replica_state': replica_state}
             if with_export_locations:
                 # Copy the active share replica's export_locations to the dr
                 # replica. Because the dr replica's id is different from the

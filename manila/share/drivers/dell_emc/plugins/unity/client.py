@@ -472,12 +472,19 @@ class UnityClient(object):
         dr_pool_id = dr_client.get_pool(name=dr_pool_name).get_id()
         dr_nas_server_name = self._get_dr_nas_server_name(
             dr_client, active_nas_server.name)
-        remote_system = self.get_remote_system(dr_client.get_serial_number())
+        remote_system = None
+        dst_sp = None
+        if not self.is_local_replication(dr_client):
+            remote_system = self.get_remote_system(
+                dr_client.get_serial_number())
+            # Required for remote replications.
+            dst_sp = active_nas_server.home_sp.to_node_enum()
         active_filesystems = active_nas_server.filesystems or []
         nas_rep = active_nas_server.replicate_with_dst_resource_provisioning(
             max_out_of_sync_minutes, dr_pool_id,
             dst_nas_server_name=dr_nas_server_name,
             remote_system=remote_system,
+            dst_sp=dst_sp,
             filesystems=active_filesystems,
         )
 
@@ -506,7 +513,8 @@ class UnityClient(object):
         except storops_ex.UnityResourceNotFoundError:
             LOG.warning('Nas server %s of dr side not found. Skipping '
                         'deleting this replication and all related '
-                        'nas server, filesystems and shares.')
+                        'nas server, filesystems and shares.',
+                        dr_nas_server_name)
             return
 
         remote_system = self.get_remote_system(dr_client.get_serial_number())
