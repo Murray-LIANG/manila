@@ -4444,9 +4444,9 @@ class ShareManager(manager.SchedulerDependentManager):
         LOG.info("Share group snapshot %s: deleted successfully",
                  share_group_snapshot_id)
 
-    def _get_member_replicas(self, share_group_replica):
+    def _get_member_replicas(self, context, share_group_replica):
         share_replicas = [
-            self._get_share_instance_dict(r)
+            self._get_share_instance_dict(context, r)
             for r in share_group_replica.get('share_group_replica_members', [])
         ]
         share_replicas_all = {
@@ -4537,7 +4537,7 @@ class ShareManager(manager.SchedulerDependentManager):
             with_share_server=True)
 
         share_replicas, share_replicas_all = self._get_member_replicas(
-            share_group_replica)
+            context, share_group_replica)
 
         share_access_rules_all = {
             share_replica['id']:
@@ -4664,7 +4664,7 @@ class ShareManager(manager.SchedulerDependentManager):
             )
 
         share_replicas, share_replicas_all = self._get_member_replicas(
-            group_replica)
+            context, group_replica)
         for share_replica in share_replicas:
             try:
                 self._delete_all_rules_from_share_replica(context,
@@ -4809,7 +4809,7 @@ class ShareManager(manager.SchedulerDependentManager):
                              'replica': share_group_replica_id})
 
         share_replicas, share_replicas_all = self._get_member_replicas(
-            group_replica)
+            context, group_replica)
 
         share_access_rules_all = {
             share_replica['id']:
@@ -4884,7 +4884,7 @@ class ShareManager(manager.SchedulerDependentManager):
         share_replica_ids_promoting = {r['id'] for r in share_replicas}
 
         share_replicas_active, _ = self._get_member_replicas(
-            active_group_replica)
+            context, active_group_replica)
         share_replica_ids_active = {r['id'] for r in share_replicas_active}
 
         for update in share_replicas_update or []:
@@ -4980,7 +4980,7 @@ class ShareManager(manager.SchedulerDependentManager):
             with_share_server=True)
 
         share_replicas, share_replicas_all = self._get_member_replicas(
-            group_replica)
+            context, group_replica)
 
         share_access_rules_all = {
             share_replica['id']:

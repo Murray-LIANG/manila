@@ -4807,6 +4807,7 @@ def _share_group_instance_get_all_with_filters(context, all_tenants=False,
                                                with_share_group_type=False,
                                                with_share_server=False,
                                                with_replica_members=False,
+                                               only_return_replicas=False,
                                                sort_key=None, sort_dir=None,
                                                session=None):
     session = session or get_session()
@@ -4820,9 +4821,13 @@ def _share_group_instance_get_all_with_filters(context, all_tenants=False,
         query = query.options(joinedload('share_server'))
     if with_replica_members:
         query = query.options(joinedload('share_group_replica_members'))
+    if only_return_replicas:
+        query = query.filter(
+            models.ShareGroupInstance.replica_state.isnot(None))
 
     filters = filters or {}
-    if not all_tenants:  # Leave the authorization to the caller.
+    if not all_tenants and context.project_id is not None:
+        # Leave the authorization to the caller.
         filters['project_id'] = context.project_id
     for name, value in filters.items():
         attr = getattr(models.ShareGroupInstance, name)
@@ -4993,6 +4998,7 @@ def share_group_replica_get(context, share_group_replica_id,
         with_share_server=with_share_server,
         with_share_group_data=with_share_group_data,
         with_replica_members=with_replica_members,
+        only_return_replicas=True,
         sort_key=sort_key, sort_dir=sort_dir,
         session=session
     )
@@ -5017,6 +5023,7 @@ def share_group_replica_get_all_in_all_tenants(context,
         with_share_group_data=with_share_group_data,
         with_share_server=with_share_server,
         with_replica_members=with_replica_members,
+        only_return_replicas=True,
         sort_key=sort_key, sort_dir=sort_dir, session=session
     )
 
@@ -5034,6 +5041,7 @@ def share_group_replica_get_all(context,
         with_share_group_data=with_share_group_data,
         with_share_server=with_share_server,
         with_replica_members=with_replica_members,
+        only_return_replicas=True,
         sort_key=sort_key, sort_dir=sort_dir, session=session
     )
 
@@ -5050,6 +5058,7 @@ def share_group_replica_get_all_by_share_group(context, share_group_id,
         with_share_group_data=with_share_group_data,
         with_share_server=with_share_server,
         with_replica_members=with_replica_members,
+        only_return_replicas=True,
         sort_key=sort_key, sort_dir=sort_dir, session=session
     )
 
@@ -5068,6 +5077,7 @@ def share_group_replica_get_available_active_replica(
         with_share_group_data=with_share_group_data,
         with_share_server=with_share_server,
         with_replica_members=with_replica_members,
+        only_return_replicas=True,
         sort_key=sort_key, sort_dir=sort_dir, session=session
     )
 
