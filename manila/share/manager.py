@@ -4801,7 +4801,7 @@ class ShareManager(manager.SchedulerDependentManager):
         # Get the active replica before promoting.
         group_replicas = self.db.share_group_replica_get_all_by_share_group(
             context, share_group_id, with_share_group_data=True,
-            with_share_server=True)
+            with_share_server=True, with_replica_members=True)
         try:
             active_group_replica = [r for r in group_replicas
                                     if r['replica_state'] ==

@@ -978,6 +978,13 @@ class UnityStorageConnection(driver.StorageConnection):
                                   conf.emc_nas_password)
 
     @staticmethod
+    def _get_active_share_replica(share_replica, share_replicas_all_dict):
+        if share_replica['replica_state'] == const.REPLICA_STATE_ACTIVE:
+            return share_replica
+        return [r for r in share_replicas_all_dict[share_replica['id']]
+                if r['replica_state'] == const.REPLICA_STATE_ACTIVE][0]
+
+    @staticmethod
     def _build_share_replicas_update(share_replicas,
                                      share_replicas_all_dict, fs_replications,
                                      with_export_locations=False,
@@ -989,12 +996,18 @@ class UnityStorageConnection(driver.StorageConnection):
             # dr replica's id. So, we need to use the active share replica's id
             # to locate the share of dr replica and its filesystem on unity.
             # Filesystem's name and share's are same on unity.
-            active_share_replica = [
-                r for r in share_replicas_all_dict[share_replica['id']]
-                if r['replica_state'] == const.REPLICA_STATE_ACTIVE
-            ][0]
+            try:
+                active_share_replica = (
+                    UnityStorageConnection._get_active_share_replica(
+                        share_replica, share_replicas_all_dict))
+            except IndexError:
+                LOG.warning('No active share replica for share replica %s. '
+                            'No update returned for it.',
+                            share_replica['id'])
+                continue
 
-            fs_name = active_share_replica['id']
+            fs_name = unity_utils.get_share_backend_id(
+                active_share_replica['id'])
             replica_state = (const.REPLICA_STATE_IN_SYNC
                              if fs_replications[fs_name].is_in_sync
                              else const.REPLICA_STATE_OUT_OF_SYNC)
@@ -1131,7 +1144,25 @@ class UnityStorageConnection(driver.StorageConnection):
             nas_server_name = share_server['id']
 
         active_client.failover_replication(self.client, nas_server_name)
-        return None, None
+
+        # Only change original active share group replica and share replicas's
+        # replica_state to in_sync. share/manager will set the promoting share
+        # group replica and share replicas's replica_state to active.
+        share_replicas_update = []
+        for share_replica in share_replicas_promoting:
+            try:
+                active_share_replica = self._get_active_share_replica(
+                    share_replica, share_replicas_all_dict)
+            except IndexError:
+                LOG.warning('No active share replica for share replica %s. '
+                            'No update returned for it.',
+                            share_replica['id'])
+                continue
+            share_replicas_update.append({active_share_replica['id']:
+                                          const.REPLICA_STATE_IN_SYNC})
+
+        return ([{active_replica['id']: const.REPLICA_STATE_IN_SYNC}],
+                share_replicas_update)
 
     def update_share_group_replica_state(self, context,
                                          group_replica_updating,

@@ -156,7 +156,7 @@ class ShareGroupReplicaController(wsgi.Controller, wsgi.AdminActionsMixin):
         try:
             self.share_group_api.delete_share_group_replica(
                 context, group_replica)
-        except exception.ReplicationException as e:
+        except exception.ShareGroupReplicationException as e:
             raise exc.HTTPBadRequest(explanation=six.text_type(e))
         return webob.Response(status_int=http_client.ACCEPTED)
 

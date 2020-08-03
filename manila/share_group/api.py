@@ -791,7 +791,7 @@ class API(base.Base):
         if (group_replica.get('replica_state') ==
                 constants.REPLICA_STATE_ACTIVE and len(active_replicas) == 1):
             msg = _('Cannot delete last active replica.')
-            raise exception.ReplicationException(reason=msg)
+            raise exception.ShareGroupReplicationException(reason=msg)
 
         group_replica_id = group_replica['id']
         LOG.info('Deleting share group replica %s.', group_replica_id)
@@ -819,7 +819,7 @@ class API(base.Base):
     def promote_share_group_replica(self, context, share_group_replica):
         share_group_replica_id = share_group_replica['id']
         if share_group_replica.get('status') != constants.STATUS_AVAILABLE:
-            raise exception.ReplicationException(
+            raise exception.ShareGroupReplicationException(
                 reason='Share group replica %(id)s must be in available state '
                        'to be promoted.' % {'id': share_group_replica_id})
 
