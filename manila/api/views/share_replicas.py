@@ -24,6 +24,7 @@ class ReplicationViewBuilder(common.ViewBuilder):
 
     _detail_version_modifiers = [
         "add_cast_rules_to_readonly_field",
+        "add_share_group_replica_id_field",
     ]
 
     def summary_list(self, request, replicas):
@@ -43,6 +44,9 @@ class ReplicationViewBuilder(common.ViewBuilder):
             'status': replica.get('status'),
             'replica_state': replica.get('replica_state'),
         }
+        self.update_versioned_resource_dict(
+            request, replica_dict, replica,
+            method_names=['add_share_group_replica_id_field'])
         return {'share_replica': replica_dict}
 
     def detail(self, request, replica):
@@ -88,3 +92,8 @@ class ReplicationViewBuilder(common.ViewBuilder):
         if context.is_admin:
             replica_dict['cast_rules_to_readonly'] = replica.get(
                 'cast_rules_to_readonly', False)
+
+    @common.ViewBuilder.versioned_method("2.56")
+    def add_share_group_replica_field(self, context, replica_dict, replica):
+        replica_dict['share_group_replica_id'] = replica.get(
+            'share_group_instance_id')

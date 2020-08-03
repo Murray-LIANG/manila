@@ -320,13 +320,16 @@ class ViewBuilder(object):
         url_parts[0:2] = prefix_parts[0:2]
         return parse.urlunsplit(url_parts)
 
-    def update_versioned_resource_dict(self, request, resource_dict, resource):
+    def update_versioned_resource_dict(self, request, resource_dict, resource,
+                                       method_names=None):
         """Updates the given resource dict for the given request version.
 
-        This method calls every method, that is applicable to the request
-        version, in _detail_version_modifiers.
+        This method calls every method if method_names is None, that is
+        applicable to the request version, in _detail_version_modifiers.
         """
         for method_name in self._detail_version_modifiers:
+            if method_names and method_name not in method_names:
+                continue
             method = getattr(self, method_name)
             if request.api_version_request.matches_versioned_method(method):
                 request_context = request.environ['manila.context']
