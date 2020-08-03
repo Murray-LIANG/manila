@@ -1006,8 +1006,7 @@ class UnityStorageConnection(driver.StorageConnection):
                             share_replica['id'])
                 continue
 
-            fs_name = unity_utils.get_share_backend_id(
-                active_share_replica['id'])
+            fs_name = unity_utils.get_share_backend_id(active_share_replica)
             replica_state = (const.REPLICA_STATE_IN_SYNC
                              if fs_replications[fs_name].is_in_sync
                              else const.REPLICA_STATE_OUT_OF_SYNC)
@@ -1196,7 +1195,10 @@ class UnityStorageConnection(driver.StorageConnection):
                       'replica_state': const.REPLICA_STATE_OUT_OF_SYNC}
                      for share_replica in share_replicas_updating])
 
+        group_replica_update = (const.REPLICA_STATE_IN_SYNC
+                                if nas_rep.is_in_sync
+                                else const.REPLICA_STATE_OUT_OF_SYNC)
         share_replicas_states = self._build_share_replicas_update(
             share_replicas_updating, share_replicas_all_dict, fs_reps,
             with_export_locations=False, with_access_rules_status=False)
-        return nas_rep.is_in_sync, share_replicas_states
+        return group_replica_update, share_replicas_states

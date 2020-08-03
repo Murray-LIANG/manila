@@ -2372,9 +2372,10 @@ class ShareManager(manager.SchedulerDependentManager):
         replicas = self.db.share_replicas_get_all(context,
                                                   with_share_data=True)
 
-        # Filter only non-active replicas belonging to this backend
+        # Filter only non-active standalone replicas belonging to this backend
         def qualified_replica(r):
-            return (share_utils.extract_host(r['host']) ==
+            return (r['share_group_instance_id'] is None and
+                    share_utils.extract_host(r['host']) ==
                     share_utils.extract_host(self.host))
 
         replicas = list(filter(lambda x: qualified_replica(x), replicas))

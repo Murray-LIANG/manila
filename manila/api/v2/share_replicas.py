@@ -226,6 +226,12 @@ class ShareReplicationController(wsgi.Controller, wsgi.AdminActionsMixin):
         if replica_state == constants.REPLICA_STATE_ACTIVE:
             return webob.Response(status_int=http_client.OK)
 
+        if replica.get('share_group_instance_id'):
+            msg = _("The share replica is a member of share group replica %s, "
+                    "use share group replica resync to resync it.")
+            raise exc.HTTPBadRequest(
+                explanation=msg % replica.get('share_group_instance_id'))
+
         try:
             self.share_api.update_share_replica(context, replica)
         except exception.InvalidHost as e:
