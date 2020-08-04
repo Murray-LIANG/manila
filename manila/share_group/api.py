@@ -799,6 +799,11 @@ class API(base.Base):
         self.db.share_group_replica_update(
             context, group_replica_id, {'status': constants.STATUS_DELETING})
 
+        for share_replica in group_replica.get(
+                'share_group_replica_members', []):
+            self.db.share_replica_update(context, share_replica['id'],
+                                         {'status': constants.STATUS_DELETING})
+
         if not group_replica['host']:
             # TODO(RyanLiang): handle snapshots of shares in the group.
 
@@ -810,11 +815,6 @@ class API(base.Base):
                                                          group_replica,
                                                          force=force)
         # TODO(RyanLiang): check quota or not.
-
-    def get_all_share_group_replica_members(self, context,
-                                            share_group_replica_id):
-        return self.db.share_group_replica_members_get_all(
-            context, share_group_replica_id)
 
     def promote_share_group_replica(self, context, share_group_replica):
         share_group_replica_id = share_group_replica['id']

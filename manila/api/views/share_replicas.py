@@ -94,6 +94,6 @@ class ReplicationViewBuilder(common.ViewBuilder):
                 'cast_rules_to_readonly', False)
 
     @common.ViewBuilder.versioned_method("2.56")
-    def add_share_group_replica_field(self, context, replica_dict, replica):
+    def add_share_group_replica_id_field(self, context, replica_dict, replica):
         replica_dict['share_group_replica_id'] = replica.get(
             'share_group_instance_id')

@@ -714,6 +714,14 @@ class API(base.Base):
             msg = _("Cannot delete last active replica.")
             raise exception.ReplicationException(reason=msg)
 
+        group_replica_id = share_replica.get('share_group_instance_id')
+        if group_replica_id:
+            raise exception.ReplicationException(
+                reason=("Share replica %(rep)s is a member of share group "
+                        "replica %(group_rep)s. Try share group replica "
+                        "delete." % {'rep': share_replica['id'],
+                                     'group_rep': group_replica_id}))
+
         LOG.info("Deleting replica %s.", share_replica['id'])
 
         self.db.share_replica_update(
@@ -750,6 +758,14 @@ class API(base.Base):
                 reason=msg % {'replica_id': share_replica['id'],
                               'status': constants.STATUS_AVAILABLE})
 
+        group_replica_id = share_replica.get('share_group_instance_id')
+        if group_replica_id:
+            raise exception.ReplicationException(
+                reason=("Share replica %(rep)s is a member of share group "
+                        "replica %(group_rep)s. Try share group replica "
+                        "promote." % {'rep': share_replica['id'],
+                                      'group_rep': group_replica_id}))
+
         replica_state = share_replica['replica_state']
 
         if (replica_state in (constants.REPLICA_STATE_OUT_OF_SYNC,
@@ -773,6 +789,14 @@ class API(base.Base):
         if not share_replica['host']:
             msg = _("Share replica does not have a valid host.")
             raise exception.InvalidHost(reason=msg)
+
+        group_replica_id = share_replica.get('share_group_instance_id')
+        if group_replica_id:
+            raise exception.ReplicationException(
+                reason=("Share replica %(rep)s is a member of share group "
+                        "replica %(group_rep)s. Try share group replica "
+                        "resync." % {'rep': share_replica['id'],
+                                     'group_rep': group_replica_id}))
 
         self.share_rpcapi.update_share_replica(context, share_replica)
 
