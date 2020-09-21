@@ -4827,8 +4827,11 @@ def _share_group_instance_get_all_with_filters(context, all_tenants=False,
 
     filters = filters or {}
     if not all_tenants and context.project_id is not None:
-        # Leave the authorization to the caller.
-        filters['project_id'] = context.project_id
+        # Leave the authorization for `all_tenants` to the caller.
+        query = query.join(
+            models.ShareGroup,
+            models.ShareGroupInstance.share_group_id == models.ShareGroup.id
+        ).filter(models.ShareGroup.project_id == context.project_id)
     for name, value in filters.items():
         attr = getattr(models.ShareGroupInstance, name)
         if attr is None:
@@ -5174,11 +5177,11 @@ def count_share_group_snapshots_in_share_group(context, share_group_id,
 
 
 @require_context
-def count_share_groups_in_share_network(context, share_network_id,
-                                        session=None):
+def count_share_group_instances_in_share_network(context, share_network_id,
+                                                 session=None):
     session = session or get_session()
     return (model_query(
-            context, models.ShareGroup, session=session,
+            context, models.ShareGroupInstance, session=session,
             project_only=True, read_deleted="no").
             filter_by(share_network_id=share_network_id).
             count())
@@ -5357,16 +5360,30 @@ def share_group_snapshot_update(context, share_group_snapshot_id, values):
         return share_group_snapshot
 
 
+@require_admin_context
+def share_group_snapshot_destroy(context, share_group_snapshot_id):
+    session = get_session()
+    with session.begin():
+        share_group_snap_ref = _share_group_snapshot_get(
+            context, share_group_snapshot_id, session=session)
+        share_group_snap_ref.soft_delete(session)
+        session.query(models.ShareSnapshotInstance).filter_by(
+            share_group_snapshot_id=share_group_snapshot_id).soft_delete()
+
+
 @require_context
 def share_group_snapshot_members_get_all(context,
-                                         share_group_snapshot_instance_id,
+                                         share_group_snapshot_id,
                                          session=None):
     session = session or get_session()
+    group_snapshot = _share_group_snapshot_get(context,
+                                               share_group_snapshot_id,
+                                               session=session)
     query = model_query(
         context, models.ShareSnapshotInstance, session=session,
         read_deleted='no',
     ).filter_by(
-        share_group_snapshot_instance_id=share_group_snapshot_instance_id)
+        share_group_snapshot_instance_id=group_snapshot.instance['id'])
     return query.all()
 
 
@@ -5455,6 +5472,18 @@ def share_group_snapshot_instance_delete(context,
 
 
 @require_context
+def share_group_snapshot_instance_update(context,
+                                         share_group_snapshot_instance_id,
+                                         values):
+    session = get_session()
+    share_group_snapshot_instance = share_group_snapshot_instance_get(
+        context, share_group_snapshot_instance_id, session=session)
+    share_group_snapshot_instance.update(values)
+    share_group_snapshot_instance.save(session=session)
+    return share_group_snapshot_instance
+
+
+@require_context
 def share_group_snapshot_instance_get(context,
                                       share_group_snapshot_instance_id,
                                       session=None,
@@ -5478,6 +5507,39 @@ def share_group_snapshot_instance_get(context,
         result.set_share_group_snapshot_data(share_group_snapshot)
 
     return result
+
+
+@require_context
+def share_group_snapshot_instance_get_all(
+        context, filters=None, session=None,
+        with_share_group_snapshot_data=False):
+
+    session = session or get_session()
+
+    query = model_query(
+        context, models.ShareGroupSnapshotInstance,
+        session=session, project_only=True, read_deleted='no')
+
+    filters = filters or {}
+    for name, value in filters.items():
+        attr = getattr(models.ShareGroupSnapshotInstance, name)
+        if attr is None:
+            raise exception.InvalidInput(
+                reason='Share group snapshot instance cannot be filtered by '
+                       '"%s".' % name)
+        query = query.filter(attr == value)
+
+    group_snap_instances = query.all()
+
+    if with_share_group_snapshot_data:
+        for group_snap_instance in group_snap_instances:
+            share_group_snapshot = _share_group_snapshot_get(
+                context, group_snap_instance['share_group_snapshot_id'],
+                session=session)
+            group_snap_instance.set_share_group_snapshot_data(
+                share_group_snapshot)
+
+    return group_snap_instances
 
 
 ####################

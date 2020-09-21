@@ -336,28 +336,27 @@ class EMCShareDriver(driver.ShareDriver):
 
     def choose_share_server_compatible_with_share_group(
             self, context, share_servers, share_group_instance,
-            share_group_snapshot=None, new_share_group_replica=False):
+            share_group_snapshot=None):
         if self.choose_share_server_compatible_with_share_group_support:
             return self.plugin.choose_share_server_compatible_with_share_group(
                 context, share_servers, share_group_instance,
                 share_group_snapshot=share_group_snapshot,
-                new_share_group_replica=new_share_group_replica,
             )
         else:
             return super(EMCShareDriver, self
                          ).choose_share_server_compatible_with_share_group(
                 context, share_servers, share_group_instance,
                 share_group_snapshot=share_group_snapshot,
-                new_share_group_replica=new_share_group_replica,
             )
 
     def create_share_group_replica(self, context,
                                    group_replica_creating, group_replicas_all,
-                                   share_replicas_creating,
-                                   share_replicas_all_dict,
+                                   share_replicas_creating, share_replicas_all,
                                    share_access_rules_dict,
-                                   share_replicas_snapshots_dict,
-                                   share_server=None):
+                                   group_replica_snapshots,
+                                   share_replica_snapshots,
+                                   share_server=None,
+                                   share_server_network_info=None):
         """Creates a share group replica.
 
         This call is made on the host that hosts the replica being created.
@@ -366,21 +365,23 @@ class EMCShareDriver(driver.ShareDriver):
         if self.share_group_replication_support:
             return self.plugin.create_share_group_replica(
                 context, group_replica_creating, group_replicas_all,
-                share_replicas_creating, share_replicas_all_dict,
-                share_access_rules_dict, share_replicas_snapshots_dict,
-                share_server=share_server)
+                share_replicas_creating, share_replicas_all,
+                share_access_rules_dict, group_replica_snapshots,
+                share_replica_snapshots, share_server=share_server,
+                share_server_network_info=share_server_network_info)
         else:
             return super(EMCShareDriver, self).create_share_group_replica(
                 context, group_replica_creating, group_replicas_all,
-                share_replicas_creating, share_replicas_all_dict,
-                share_access_rules_dict, share_replicas_snapshots_dict,
-                share_server=share_server)
+                share_replicas_creating, share_replicas_all,
+                share_access_rules_dict, group_replica_snapshots,
+                share_replica_snapshots, share_server=share_server,
+                share_server_network_info=share_server_network_info)
 
     def delete_share_group_replica(self, context,
                                    group_replica_deleting, group_replicas_all,
-                                   share_replicas_deleting,
-                                   share_replicas_all_dict,
-                                   share_replicas_snapshots,
+                                   share_replicas_deleting, share_replicas_all,
+                                   group_replica_snapshots,
+                                   share_replica_snapshots,
                                    share_server=None):
         """Deletes a share group replica.
 
@@ -389,22 +390,22 @@ class EMCShareDriver(driver.ShareDriver):
         """
         if self.share_group_replication_support:
             return self.plugin.delete_share_group_replica(
-                context,
-                group_replica_deleting, group_replicas_all,
-                share_replicas_deleting, share_replicas_all_dict,
-                share_replicas_snapshots, share_server=share_server)
+                context, group_replica_deleting, group_replicas_all,
+                share_replicas_deleting, share_replicas_all,
+                group_replica_snapshots, share_replica_snapshots,
+                share_server=share_server)
         else:
             return super(EMCShareDriver, self).delete_share_group_replica(
-                context,
-                group_replica_deleting, group_replicas_all,
-                share_replicas_deleting, share_replicas_all_dict,
-                share_replicas_snapshots, share_server=share_server)
+                context, group_replica_deleting, group_replicas_all,
+                share_replicas_deleting, share_replicas_all,
+                group_replica_snapshots, share_replica_snapshots,
+                share_server=share_server)
 
     def promote_share_group_replica(self, context,
                                     group_replica_promoting,
                                     group_replicas_all,
                                     share_replicas_promoting,
-                                    share_replicas_all_dict,
+                                    share_replicas_all,
                                     share_access_rules_dict,
                                     share_server=None):
         """Promotes a share group replica to active state.
@@ -414,23 +415,23 @@ class EMCShareDriver(driver.ShareDriver):
         """
         if self.share_group_replication_support:
             return self.plugin.promote_share_group_replica(
-                context,
-                group_replica_promoting, group_replicas_all,
-                share_replicas_promoting, share_replicas_all_dict,
+                context, group_replica_promoting, group_replicas_all,
+                share_replicas_promoting, share_replicas_all,
                 share_access_rules_dict, share_server=share_server)
         else:
             return super(EMCShareDriver, self).promote_share_group_replica(
-                context,
-                group_replica_promoting, group_replicas_all,
-                share_replicas_promoting, share_replicas_all_dict,
+                context, group_replica_promoting, group_replicas_all,
+                share_replicas_promoting, share_replicas_all,
                 share_access_rules_dict, share_server=share_server)
 
     def update_share_group_replica_state(self, context,
                                          group_replica_updating,
                                          group_replicas_all,
                                          share_replicas_updating,
-                                         share_replicas_all_dict,
+                                         share_replicas_all,
                                          share_access_rules_dict,
+                                         group_replica_snapshots,
+                                         share_replica_snapshots,
                                          share_server=None):
         """Updates a share group replica's replica state.
 
@@ -439,14 +440,99 @@ class EMCShareDriver(driver.ShareDriver):
         """
         if self.share_group_replication_support:
             return self.plugin.update_share_group_replica_state(
-                context,
-                group_replica_updating, group_replicas_all,
-                share_replicas_updating, share_replicas_all_dict,
-                share_access_rules_dict, share_server=share_server)
+                context, group_replica_updating, group_replicas_all,
+                share_replicas_updating, share_replicas_all,
+                share_access_rules_dict, group_replica_snapshots,
+                share_replica_snapshots, share_server=share_server)
         else:
             return super(EMCShareDriver,
                          self).update_share_group_replica_state(
-                context,
-                group_replica_updating, group_replicas_all,
-                share_replicas_updating, share_replicas_all_dict,
-                share_access_rules_dict, share_server=share_server)
+                context, group_replica_updating, group_replicas_all,
+                share_replicas_updating, share_replicas_all,
+                share_access_rules_dict, group_replica_snapshots,
+                share_replica_snapshots, share_server=share_server)
+
+    def create_replicated_share_group_snapshot(self, context,
+                                               group_replicas_all,
+                                               group_replica_snapshots,
+                                               share_replicas_all,
+                                               share_replica_snapshots,
+                                               share_server=None):
+        """Creates a share group snapshot on active share group replica and
+
+        update across all replicas.
+
+        This call is made on the 'active' share group replica's host.
+        Drivers are expected to transfer the snapshot created to the
+        respective replicas.
+        """
+        if self.share_group_replication_support:
+            return self.plugin.create_replicated_share_group_snapshot(
+                context, group_replicas_all, group_replica_snapshots,
+                share_replicas_all, share_replica_snapshots,
+                share_server=share_server)
+        else:
+            return super(EMCShareDriver,
+                         self).create_replicated_share_group_snapshot(
+                context, group_replicas_all, group_replica_snapshots,
+                share_replicas_all, share_replica_snapshots,
+                share_server=share_server)
+
+    def delete_replicated_share_group_snapshot(self, context,
+                                               group_replicas_all,
+                                               group_replica_snapshots,
+                                               share_replicas_all,
+                                               share_replica_snapshots,
+                                               share_server=None):
+        """Deletes a share group snapshot by deleting its instances across
+
+        the replicas.
+
+        This call is made on the 'active' share group replica's host, since
+        drivers may not be able to delete the snapshot from an individual
+        replica.
+        """
+        if self.share_group_replication_support:
+            return self.plugin.delete_replicated_share_group_snapshot(
+                context, group_replicas_all, group_replica_snapshots,
+                share_replicas_all, share_replica_snapshots,
+                share_server=share_server)
+        else:
+            return super(EMCShareDriver,
+                         self).delete_replicated_share_group_snapshot(
+                context, group_replicas_all, group_replica_snapshots,
+                share_replicas_all, share_replica_snapshots,
+                share_server=share_server)
+
+    def update_replicated_share_group_snapshot(self, context,
+                                               group_replica,
+                                               group_replicas_all,
+                                               group_replica_snap_updating,
+                                               group_replica_snaps_all,
+                                               share_replicas,
+                                               share_replicas_all,
+                                               share_replica_snaps_updating,
+                                               share_replica_snaps_all,
+                                               share_server=None):
+        """Updates the status of a share group snapshot instance that lives on
+
+        a share group replica.
+
+        This call is made on the share group replica's host and not the
+        'active' share group replica's host.
+        """
+        if self.share_group_replication_support:
+            return self.plugin.update_replicated_share_group_snapshot(
+                context, group_replica, group_replicas_all,
+                group_replica_snap_updating, group_replica_snaps_all,
+                share_replicas, share_replicas_all,
+                share_replica_snaps_updating, share_replica_snaps_all,
+                share_server=share_server)
+        else:
+            return super(EMCShareDriver,
+                         self).update_replicated_share_group_snapshot(
+                context, group_replica, group_replicas_all,
+                group_replica_snap_updating, group_replica_snaps_all,
+                share_replicas, share_replicas_all,
+                share_replica_snaps_updating, share_replica_snaps_all,
+                share_server=share_server)

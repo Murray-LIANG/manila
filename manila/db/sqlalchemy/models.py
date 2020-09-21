@@ -1147,15 +1147,13 @@ class ShareGroup(BASE, ManilaBase):
     __tablename__ = 'share_groups'
     _extra_keys = ['status', 'host', 'share_server_id', 'share_network_id',
                    'availability_zone', 'availability_zone_id',
-                   'share_group_type_id', 'share_group_type',
-                   'source_share_group_snapshot_id']
+                   'share_group_type_id', 'share_group_type']
 
     def __getattr__(self, item):
         proxified_properties = ('status', 'host', 'share_server_id',
                                 'share_network_id',
                                 'availability_zone', 'availability_zone_id',
-                                'share_group_type_id', 'share_group_type',
-                                'source_share_group_snapshot_id')
+                                'share_group_type_id', 'share_group_type')
 
         if item in proxified_properties:
             return getattr(self.instance, item, None)
@@ -1171,6 +1169,7 @@ class ShareGroup(BASE, ManilaBase):
     consistent_snapshot_support = Column(Enum('pool', 'host'), default=None)
     group_replication_type = Column(Enum('writable', 'readable', 'dr'),
                                     default=None)
+    source_share_group_snapshot_instance_id = Column(String(36))
 
     instances = orm.relationship(
         'ShareGroupInstance',
@@ -1228,7 +1227,8 @@ class ShareGroupInstance(BASE, ManilaBase):
 
     _proxified_properties = ['name', 'description',
                              'consistent_snapshot_support',
-                             'group_replication_type']
+                             'group_replication_type',
+                             'source_share_group_snapshot_instance_id']
 
     def set_share_group_data(self, share_group):
         for sg_property in self._proxified_properties:
@@ -1261,7 +1261,6 @@ class ShareGroupInstance(BASE, ManilaBase):
         String(36),
         ForeignKey('share_servers.id', name='fk_sgi_share_server_id'),
         nullable=True)
-    source_share_group_snapshot_id = Column(String(36))
     status = Column(String(255))
 
     share_group_type = orm.relationship(
@@ -1380,7 +1379,8 @@ class ShareGroupSnapshotInstance(BASE, ManilaBase):
     __tablename__ = 'share_group_snapshot_instances'
     _extra_keys_ = ['name', 'description']
 
-    _proxified_properties = ['name', 'description']
+    _proxified_properties = ['name', 'description', 'share_group_id',
+                             'share_group']
 
     def set_share_group_snapshot_data(self, share_group_snapshot):
         for sgs_property in self._proxified_properties:

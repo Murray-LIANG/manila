@@ -67,7 +67,6 @@ def _create_share_group_instances_table(connection):
                   sa.ForeignKey('share_servers.id',
                                 name='fk_sgi_share_server_id'),
                   nullable=True),
-        sa.Column('source_share_group_snapshot_id', sa.String(length=36)),
         sa.Column('status', sa.String(length=255)),
         mysql_engine='InnoDB',
         mysql_charset='utf8'
@@ -92,8 +91,6 @@ def _create_share_group_instances_table(connection):
             'share_group_type_id': share_group.share_group_type_id,
             'share_network_id': share_group.share_network_id,
             'share_server_id': share_group.share_server_id,
-            'source_share_group_snapshot_id':
-                share_group.source_share_group_snapshot_id,
             'status': share_group.status,
         })
     op.bulk_insert(share_group_instances_table, share_group_instances)
@@ -109,12 +106,15 @@ def _create_share_group_instances_table(connection):
         batch_op.drop_column('share_group_type_id')
         batch_op.drop_column('share_network_id')
         batch_op.drop_column('share_server_id')
-        batch_op.drop_column('source_share_group_snapshot_id')
         batch_op.drop_column('status')
 
         batch_op.add_column(sa.Column('group_replication_type',
                                       sa.Enum('writable', 'readable', 'dr'),
                                       nullable=True))
+        batch_op.alter_column(
+            'source_share_group_snapshot_id',
+            existing_type=sa.String(36),
+            new_column_name='source_share_group_snapshot_instance_id')
 
 
 def _add_share_group_instance_id_to_share_instances(connection):
@@ -237,8 +237,11 @@ def _remove_share_group_instances_table(connection):
                                     name='fk_share_group_share_server_id'),
                       nullable=True))
 
-        batch_op.add_column(sa.Column('source_share_group_snapshot_id',
-                                      sa.String(length=36)))
+        batch_op.alter_column(
+            'source_share_group_snapshot_instance_id',
+            existing_type=sa.String(36),
+            new_column_name='source_share_group_snapshot_id')
+
         batch_op.add_column(sa.Column('status', sa.String(length=255)))
 
         batch_op.drop_column('group_replication_type')
@@ -264,8 +267,6 @@ def _remove_share_group_instances_table(connection):
                     'share_group_type_id': instance.share_group_type_id,
                     'share_network_id': instance.share_network_id,
                     'share_server_id': instance.share_server_id,
-                    'source_share_group_snapshot_id':
-                        instance.source_share_group_snapshot_id,
                     'status': instance.status,
                 }
             )

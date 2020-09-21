@@ -92,7 +92,8 @@ class ShareNetworkController(wsgi.Controller):
 
         # NOTE(ameade): Do not allow deletion of share network used by share
         # group
-        sg_count = db_api.count_share_groups_in_share_network(context, id)
+        sg_count = db_api.count_share_group_instances_in_share_network(context,
+                                                                       id)
         if sg_count:
             msg = _("Can not delete share network %(id)s, it has %(len)s "
                     "share group(s).") % {'id': id, 'len': sg_count}

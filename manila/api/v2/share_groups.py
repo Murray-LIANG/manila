@@ -304,13 +304,23 @@ class ShareGroupController(wsgi.Controller, wsgi.AdminActionsMixin):
     def _delete(self, context, resource, force=True):
         # Delete all share group snapshots
         for snap in resource['snapshots']:
-            db.share_group_snapshot_destroy(context, snap['id'])
+            for instance in snap.instances:
+                # The share group snapshot will be deleted after the last
+                # snapshot instance is deleted.
+                db.share_group_snapshot_instance_delete(context,
+                                                        instance['id'])
 
         # Delete all shares in share group
         for share in db.get_all_shares_by_share_group(context, resource['id']):
-            db.share_delete(context, share['id'])
+            for instance in share.instances:
+                # The share will be deleted after the last share instance is
+                # deleted.
+                db.share_instance_delete(context, instance['id'])
 
-        db.share_group_destroy(context.elevated(), resource['id'])
+        for instance in resource.instances:
+            # The share group will be deleted after the last group instance is
+            # deleted.
+            db.share_group_instance_delete(instance['id'])
 
     @wsgi.Controller.api_version('2.31', '2.54', experimental=True)
     @wsgi.action('reset_status')

@@ -239,7 +239,12 @@ class ShareGroupSnapshotController(wsgi.Controller, wsgi.AdminActionsMixin):
         return self.share_group_api.get_share_group_snapshot(*args, **kwargs)
 
     def _delete(self, context, resource, force=True):
-        db.share_group_snapshot_destroy(context.elevated(), resource['id'])
+        for instance in resource.instances:
+            # This will delete all member share snapshots and the share group
+            # snapshot will be deleted after the last snapshot instance is
+            # deleted.
+            db.share_group_snapshot_instance_delete(context,
+                                                    instance['id'])
 
     @wsgi.Controller.api_version('2.31', '2.54', experimental=True)
     @wsgi.action('reset_status')

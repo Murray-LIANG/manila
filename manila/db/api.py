@@ -1193,10 +1193,11 @@ def count_share_group_snapshots_in_share_group(context, share_group_id):
         context, share_group_id)
 
 
-def count_share_groups_in_share_network(context, share_network_id,
-                                        session=None):
+def count_share_group_instances_in_share_network(context, share_network_id,
+                                                 session=None):
     """Return the number of groups with the specified share network."""
-    return IMPL.count_share_groups_in_share_network(context, share_network_id)
+    return IMPL.count_share_group_instances_in_share_network(context,
+                                                             share_network_id)
 
 
 def share_group_instance_get(context, share_group_instance_id,
@@ -1370,11 +1371,16 @@ def share_group_snapshot_update(context, share_group_snapshot_id, values):
         context, share_group_snapshot_id, values)
 
 
+def share_group_snapshot_destroy(context, share_group_snapshot_id):
+    """Destroy the share_group_snapshot or raise if it does not exist."""
+    return IMPL.share_group_snapshot_destroy(context, share_group_snapshot_id)
+
+
 def share_group_snapshot_members_get_all(context,
-                                         share_group_snapshot_instance_id):
-    """Return the members of a share group snapshot instance."""
+                                         share_group_snapshot_id):
+    """Return the members of a share group snapshot."""
     return IMPL.share_group_snapshot_members_get_all(
-        context, share_group_snapshot_instance_id)
+        context, share_group_snapshot_id)
 
 
 def share_group_snapshot_member_create(context, values):
@@ -1399,13 +1405,23 @@ def share_group_snapshot_instance_create(context, share_group_snapshot_id,
 
 
 def share_group_snapshot_instance_delete(context,
-                                         share_group_snapshot_instance_id,
-                                         values):
+                                         share_group_snapshot_instance_id):
     """Deletes a share group snapshot instance.
 
     :raises NotFound if share_group_snapshot_instance does not exist.
     """
     return IMPL.share_group_snapshot_instance_delete(
+        context, share_group_snapshot_instance_id)
+
+
+def share_group_snapshot_instance_update(context,
+                                         share_group_snapshot_instance_id,
+                                         values):
+    """Updates a share group snapshot instance.
+
+    :raises NotFound if share_group_snapshot_instance does not exist.
+    """
+    return IMPL.share_group_snapshot_instance_update(
         context, share_group_snapshot_instance_id, values)
 
 
@@ -1423,6 +1439,14 @@ def share_group_snapshot_instance_get(context,
     """
     return IMPL.share_group_snapshot_instance_get(
         context, share_group_snapshot_instance_id,
+        with_share_group_snapshot_data=with_share_group_snapshot_data)
+
+
+def share_group_snapshot_instance_get_all(
+        context, filters=None, with_share_group_snapshot_data=False):
+    """Returns all share group snapshot instances."""
+    return IMPL.share_group_snapshot_instance_get_all(
+        context, filters=filters,
         with_share_group_snapshot_data=with_share_group_snapshot_data)
 
 

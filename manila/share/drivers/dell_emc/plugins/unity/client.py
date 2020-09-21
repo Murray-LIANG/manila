@@ -29,6 +29,7 @@ from manila import exception
 from manila.i18n import _
 from manila.share.drivers.dell_emc.common.enas import utils as enas_utils
 from manila.share.drivers.dell_emc.plugins.unity import utils
+from manila import utils as manila_utils
 
 LOG = log.getLogger(__name__)
 
@@ -208,10 +209,11 @@ class UnityClient(object):
                      'already enabled.', nas_server.name)
 
     @staticmethod
-    def create_snapshot(filesystem, name):
+    def create_snapshot(filesystem, name, replicated_to=None):
         access_type = enums.FilesystemSnapAccessTypeEnum.CHECKPOINT
         try:
-            return filesystem.create_snap(name, fs_access_type=access_type)
+            return filesystem.create_snap(name, fs_access_type=access_type,
+                                          replicated_to=replicated_to)
         except storops_ex.UnitySnapNameInUseError:
             LOG.info('Snapshot %(snap)s on Filesystem %(fs)s already '
                      'exists.', {'snap': name, 'fs': filesystem.name})
@@ -227,7 +229,7 @@ class UnityClient(object):
         except storops_ex.UnitySnapNameInUseError:
             return self.get_snapshot(dst_snap_name)
 
-    def get_snapshot(self, name):
+    def get_snapshot(self, name=None):
         return self.system.get_snap(name=name)
 
     @staticmethod
@@ -357,24 +359,13 @@ class UnityClient(object):
         snap = self.get_snapshot(snap_name)
         return snap.restore(delete_backup=True)
 
-    def is_nas_server_in_replication(self, nas_server):
-        """Returns True if the nas server is participating in a replication.
-
-        Only one replication session of nas server can be created per
-        replication connection.
-        The connection inside local Unity is considered as a replication
-        connection.
-        Connections to different remote Unity systems are considered as
-        different replication connections.
-        """
-        pass
-
     def _get_nas_server_with_rep_role(self, name, role):
         """Gets nas server with specified replication role.
 
         :param name: could be xxx or OS-DR_xxx.
         :param role: could be `active` or `dr`.
         """
+        # TODO(RyanLiang): delete it
         if name.startswith(NAME_PREFIX_DR_NAS_SERVER):
             dr_name = name
             active_name = name[len(NAME_PREFIX_DR_NAS_SERVER):]
@@ -399,7 +390,11 @@ class UnityClient(object):
                               '%(role)s.', {'name': name, 'role': role})
                     nas_server = None
             except storops_ex.UnityResourceNotFoundError:
-                LOG.debug('Nas server with name %s not found.', name)
+                LOG.debug(
+                    'Nas server with name %(name)s not found. Will try '
+                    'another name %(alt)s.',
+                    {'name': name,
+                     'alt': dr_name if name == active_name else active_name})
 
         if not nas_server:
             raise exception.EMCUnityError(
@@ -416,7 +411,8 @@ class UnityClient(object):
         For the nas server involved in a local replication, the name of the
         active nas server could be xxx or OS-DR_xxx.
         """
-        return self._get_nas_server_with_rep_role(name, 'active')
+        # TODO(RyanLiang): delete it
+        # return self._get_nas_server_with_rep_role(name, 'active')
 
     def get_dr_nas_server(self, name):
         """Returns the dr nas server.
@@ -424,7 +420,8 @@ class UnityClient(object):
         For the nas server involved in a local replication, the name of the
         dr nas server could be xxx or OS-DR_xxx. Try OS-DR_xxx first.
         """
-        return self._get_nas_server_with_rep_role(name, 'dr')
+        # TODO(RyanLiang): delete it
+        # return self._get_nas_server_with_rep_role(name, 'dr')
 
     def get_serial_number(self):
         return self.system.serial_number
@@ -456,9 +453,12 @@ class UnityClient(object):
         return fs_reps
 
     def _get_dr_nas_server_name(self, dr_client, active_nas_server_name):
-        # For nas server in local replications, if source's name is xxx, then
+        # 1) For nas server in local replication, if source's name is xxx, then
         # destination's name is OS-DR_xxx, otherwise, source's name is
         # OS-DR_xxx, and destination's name is xxx.
+        # 2) For nas server in remote replication, the name of source and
+        # destination is the same.
+        # TODO(RyanLiang): delete it
         if self.is_local_replication(dr_client):
             prefix = NAME_PREFIX_DR_NAS_SERVER
             return (active_nas_server_name[len(prefix):]
@@ -466,18 +466,17 @@ class UnityClient(object):
                     else (prefix + active_nas_server_name))
         return active_nas_server_name
 
-    def enable_replication(self, dr_client, nas_server_name,
-                           dr_pool_name, max_out_of_sync_minutes):
+    def enable_replication(self, dr_client, active_nas_server_name,
+                           dr_nas_server_name, dr_pool_name,
+                           max_out_of_sync_minutes, dr_new_ip_addr=None):
         """Enables the nas server replication from this client to dr_client.
 
         dr_client could connect to the same Unity for local replications.
         """
         # Manila share_server_id xxx or OS-DR_xxx will be the name of current
         # active nas server.
-        active_nas_server = self.get_active_nas_server(nas_server_name)
+        active_nas_server = self.get_nas_server(active_nas_server_name)
         dr_pool_id = dr_client.get_pool(name=dr_pool_name).get_id()
-        dr_nas_server_name = self._get_dr_nas_server_name(
-            dr_client, active_nas_server.name)
         remote_system = None
         dst_sp = None
         if not self.is_local_replication(dr_client):
@@ -494,30 +493,30 @@ class UnityClient(object):
             filesystems=active_filesystems,
         )
 
-        # Manual sync the nas server replication session or the share won't be
-        # created on the destination system.
+        # Manual sync the nas server replication session to make sure the share
+        # is created on the destination system.
         nas_rep.sync()
 
         dr_nas_server = dr_client.get_nas_server(dr_nas_server_name)
+
+        # The file interface on the destination nas server will be the same as
+        # the source's. Need to override it using its expected ip address.
+        if dr_new_ip_addr:
+            dr_nas_server.file_interface[0].modify(ip=dr_new_ip_addr)
+
         return nas_rep, self._get_fs_replications(active_nas_server,
                                                   dr_nas_server, remote_system)
 
-    def disable_replication(self, dr_client, nas_server_name):
+    def disable_replication(self, dr_client, active_nas_server_name,
+                            dr_nas_server_name):
         """Disables the nas server replication."""
 
-        try:
-            active_nas_server = self.get_active_nas_server(nas_server_name)
-        except exception.EMCUnityError as e:
-            LOG.info('Skipping disable replication: %s', e)
-            return
-
-        dr_nas_server_name = self._get_dr_nas_server_name(
-            dr_client, active_nas_server.name)
+        active_nas_server = self.get_nas_server(active_nas_server_name)
 
         try:
             dr_nas_server = dr_client.get_nas_server(dr_nas_server_name)
         except storops_ex.UnityResourceNotFoundError:
-            LOG.warning('Nas server %s of dr side not found. Skipping '
+            LOG.warning('DR side nas server %s not found. Skipping '
                         'deleting this replication and all related '
                         'nas server, filesystems and shares.',
                         dr_nas_server_name)
@@ -525,7 +524,7 @@ class UnityClient(object):
 
         remote_system = self.get_remote_system(dr_client.get_serial_number())
 
-        # Delete the replication session on filesystems.
+        # Delete the replication sessions on filesystems.
         for active_fs, dr_fs in self._zip_active_dr_filesystems(
                 active_nas_server.filesystems, dr_nas_server.filesystems):
             active_fs.delete_replications(remote_system=remote_system,
@@ -538,29 +537,18 @@ class UnityClient(object):
         # Delete dr side filesystems then nas server. No need to delete the
         # shares on the dr destination nas server. They will be deleted
         # together with filesystems.
-        for fs in dr_nas_server.filesystems or []:
+        for fs in (dr_nas_server.filesystems or []):
             dr_client.delete_filesystem(fs, force_snap_delete=True)
         dr_client.delete_nas_server(dr_nas_server_name)
 
-    def failover_replication(self, dr_client, nas_server_name):
+    def failover_replication(self, dr_client, active_nas_server_name,
+                             dr_nas_server_name):
         is_planned = True
         try:
-            active_nas_server = self.get_active_nas_server(nas_server_name)
-        except storops_ex.StoropsConnectTimeoutError:
-            LOG.info('Active Unity %s is down. Unable to fail over the '
-                     'replication with sync. Using unplanned fail over '
-                     'without sync', self.unity_host)
-            is_planned = False
-        except exception.EMCUnityError as e:
-            LOG.info('Skipping fail over replication: %s', e)
-            return
-
-        if is_planned:
-            # Planned means fail over with sync from active side.
+            # Planned fail over which fails over with sync from active side.
+            active_nas_server = self.get_nas_server(active_nas_server_name)
             remote_system = self.get_remote_system(
                 dr_client.get_serial_number())
-            dr_nas_server_name = self._get_dr_nas_server_name(
-                dr_client, active_nas_server.name)
             dr_nas_server = dr_client.get_nas_server(dr_nas_server_name)
 
             rep_session = active_nas_server.get_replications(
@@ -570,41 +558,79 @@ class UnityClient(object):
 
             # Resume can only be done on the original dr side.
             rep_session = dr_client.system.get_replication_sessions(
-                dst_resource_id=dr_nas_server.get_id())[0]
+                _id=rep_session.get_id())
             rep_session.resume()
-        else:
-            # Unplanned means fail over without sync from dr side.
-            # Active side is inaccessible.
-            dr_nas_server = dr_client.get_dr_nas_server(nas_server_name)
 
+        except storops_ex.StoropsConnectTimeoutError:
+            # Unplanned fail over which fails over without sync from dr side.
+            # Because the active side is down.
+            LOG.info('Active Unity %s is down. Unable to fail over the '
+                     'replication with sync. Using unplanned fail over '
+                     'without sync', self.unity_host)
+
+            # Cannot use active_nas_server or other resources of active side
+            # which is down.
+            dr_nas_server = dr_client.get_nas_server(dr_nas_server_name)
             rep_session = dr_client.system.get_replication_sessions(
                 dst_resource_id=dr_nas_server.get_id())[0]
             rep_session.failover(sync=False)
             rep_session.resume()
 
-    def get_nas_server_and_fs_replications(self, dr_client, nas_server_name):
+    def get_nas_server_and_fs_replications(self, dr_client,
+                                           active_nas_server_name,
+                                           dr_nas_server_name):
         try:
-            active_nas_server = self.get_active_nas_server(nas_server_name)
+            active_nas_server = self.get_nas_server(active_nas_server_name)
         except storops_ex.StoropsConnectTimeoutError:
             LOG.info('Active Unity %s is down. Cannot get the replication '
                      'sessions.', self.unity_host)
             return None, None
 
-        dr_nas_server_name = self._get_dr_nas_server_name(
-            dr_client, active_nas_server.name)
         dr_nas_server = dr_client.get_nas_server(dr_nas_server_name)
         remote_system = self.get_remote_system(dr_client.get_serial_number())
         try:
             nas_server_rep = active_nas_server.get_replications(
                 remote_system=remote_system, dst_nas_server=dr_nas_server)[0]
         except IndexError:
-            LOG.info('Replication session not exist from nas server %(src)s '
-                     'to nas server %(dst)s on unity %(remote)s.',
-                     {'src': active_nas_server.name,
-                      'dst': dr_nas_server_name,
+            LOG.info('Replication session not exist from nas server '
+                     '%(active)s to nas server %(dr)s on unity %(remote)s.',
+                     {'active': active_nas_server.name,
+                      'dr': dr_nas_server_name,
                       'remote': remote_system.name})
             return None, None
 
         return nas_server_rep, self._get_fs_replications(active_nas_server,
                                                          dr_nas_server,
                                                          remote_system)
+
+    def get_replicated_snapshot(self, name, is_local_replication):
+        """Gets the replicated filesystem snapshot.
+
+        :param name: the replicated snapshot's name is the same as the source's
+            for remote replicated filesystems. But the replicated snapshot's
+            name could be <fake-uuid>_20200907020101 while the source's is
+            <fake-uuid> for local replicated filesystems. This parameter `name`
+            is <fake-uuid> part. It's safe because it's UUID.
+        :return: the replicated snapshot with name <fake-uuid> or
+            <fake-uuid>_20200907020101.
+        """
+        @manila_utils.retry(storops_ex.UnityResourceNotFoundError,
+                            interval=3, retries=3)
+        def _get_with_retry(name):
+            # Could raise `UnityResourceNotFoundError` when the replicated
+            # snapshot doesn't appear.
+
+            if is_local_replication:
+                name = name + '_'
+                snaps = [snap for snap in self.get_snapshot()
+                         if snap['name'].startswith(name)]
+                if len(snaps) != 1:
+                    raise exception.EMCUnityError(
+                        err='There should be only one snapshot starting with '
+                            'name %(name)s, but %(count)s '
+                            'found.' % {'name': name, 'count': len(snaps)})
+                return snaps[0]
+            else:
+                return self.get_snapshot(name)
+
+        return _get_with_retry(name)

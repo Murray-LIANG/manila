@@ -76,7 +76,8 @@ class ShareGroupReplicaController(wsgi.Controller, wsgi.AdminActionsMixin):
         sort_dir = filters.pop('sort_dir', None)
 
         share_group_id = req.params.get('share_group_id')
-        filters['share_group_id'] = share_group_id
+        if share_group_id:
+            filters['share_group_id'] = share_group_id
         try:
             group_replicas = self.share_group_api.get_all_share_group_replicas(
                 context, filters=filters, with_replica_members=is_detail,

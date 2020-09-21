@@ -79,8 +79,12 @@ class ShareAPI(object):
         1.20 - Add create_share_group_replica(), delete_share_group_replica(),
             promote_share_group_replica(), update_share_group_replica() for
             share group replication.
-            And rename create_share_group() to create_share_group_instance(),
-            rename delete_share_group() to delete_share_group_instance().
+            Rename create_share_group() to create_share_group_instance().
+            Rename delete_share_group() to delete_share_group_instance().
+            Rename create_share_group_snapshot() to
+            create_share_group_snapshot_instance().
+            Rename delete_share_group_snapshot() to
+            delete_share_group_snapshot_instance().
     """
 
     BASE_RPC_API_VERSION = '1.0'
@@ -273,19 +277,22 @@ class ShareAPI(object):
             context, 'delete_share_group_instance',
             share_group_instance_id=share_group_instance['id'])
 
-    def create_share_group_snapshot(self, context, share_group_snapshot, host):
+    def create_share_group_snapshot_instance(self, context,
+                                             group_snapshot_instance,
+                                             host):
         new_host = utils.extract_host(host)
-        call_context = self.client.prepare(server=new_host, version='1.16')
+        call_context = self.client.prepare(server=new_host, version='1.20')
         call_context.cast(
-            context, 'create_share_group_snapshot',
-            share_group_snapshot_id=share_group_snapshot['id'])
+            context, 'create_share_group_snapshot_instance',
+            share_group_snapshot_instance_id=group_snapshot_instance['id'])
 
-    def delete_share_group_snapshot(self, context, share_group_snapshot, host):
+    def delete_share_group_snapshot_instance(self, context,
+                                             group_snapshot_instance, host):
         new_host = utils.extract_host(host)
-        call_context = self.client.prepare(server=new_host, version='1.16')
+        call_context = self.client.prepare(server=new_host, version='1.20')
         call_context.cast(
-            context, 'delete_share_group_snapshot',
-            share_group_snapshot_id=share_group_snapshot['id'])
+            context, 'delete_share_group_snapshot_instance',
+            share_group_snapshot_id=group_snapshot_instance['id'])
 
     def create_share_group_replica(self, context, share_group_replica, host):
         new_host = utils.extract_host(host)
@@ -296,15 +303,13 @@ class ShareAPI(object):
             share_group_id=share_group_replica['share_group_id'],
         )
 
-    def delete_share_group_replica(self, context, share_group_replica,
-                                   force=False):
+    def delete_share_group_replica(self, context, share_group_replica):
         host = utils.extract_host(share_group_replica['host'])
         call_context = self.client.prepare(server=host, version='1.20')
         call_context.cast(
             context, 'delete_share_group_replica',
             share_group_replica_id=share_group_replica['id'],
             share_group_id=share_group_replica['share_group_id'],
-            force=force,
         )
 
     def promote_share_group_replica(self, context, share_group_replica):
@@ -317,10 +322,30 @@ class ShareAPI(object):
 
     def update_share_group_replica(self, context, share_group_replica):
         host = utils.extract_host(share_group_replica['host'])
-        call_context = self.client.prepare(server=host, version='1.8')
+        call_context = self.client.prepare(server=host, version='1.20')
         call_context.cast(context,
                           'update_share_group_replica',
                           share_group_replica_id=share_group_replica['id'])
+
+    def create_replicated_share_group_snapshot(self, context, share_group,
+                                               share_group_snapshot):
+        host = utils.extract_host(share_group['host'])
+        call_context = self.client.prepare(server=host, version='1.20')
+        call_context.cast(
+            context,
+            'create_replicated_share_group_snapshot',
+            share_group_snapshot_id=share_group_snapshot['id'],
+            share_group_id=share_group_snapshot['share_group_id'])
+
+    def delete_replicated_share_group_snapshot(self, context, share_group,
+                                               share_group_snapshot):
+        host = utils.extract_host(share_group['host'])
+        call_context = self.client.prepare(server=host, version='1.20')
+        call_context.cast(
+            context,
+            'delete_replicated_share_group_snapshot',
+            share_group_snapshot_id=share_group_snapshot['id'],
+            share_group_id=share_group_snapshot['share_group_id'])
 
     def create_share_replica(self, context, share_replica, host,
                              request_spec, filter_properties):

@@ -68,6 +68,11 @@ class API(base.Base):
                        % constants.STATUS_AVAILABLE)
                 raise exception.InvalidShareGroupSnapshot(reason=msg)
 
+            # TODO(RyanLiang): lock the source share group when the new group
+            # is created from it. Or `share_group_snapshot.instance` would be
+            # incorrect when the source share group is undergoing failover.
+            source_share_group_snapshot_instance_id = (
+                share_group_snapshot.instance['id'])
             original_share_group = self.db.share_group_get(
                 context, share_group_snapshot['share_group_id'])
             share_type_ids = [
@@ -228,7 +233,8 @@ class API(base.Base):
 
         options = {
             'share_group_type_id': share_group_type_id,
-            'source_share_group_snapshot_id': source_share_group_snapshot_id,
+            'source_share_group_snapshot_instance_id':
+                source_share_group_snapshot_instance_id,
             'share_network_id': share_network_id,
             'share_server_id': share_server_id,
             'availability_zone_id': availability_zone_id,
@@ -248,6 +254,7 @@ class API(base.Base):
             # This will create the share group instance in db too.
             share_group = self.db.share_group_create(context, options)
             if share_group_snapshot:
+                # Members got based on `share_group_snapshot.instance`.
                 members = self.db.share_group_snapshot_members_get_all(
                     context, source_share_group_snapshot_id)
                 for member in members:
@@ -339,7 +346,7 @@ class API(base.Base):
         share_group_instance_id = share_group_instance['id']
 
         if not share_group_instance['host']:
-            self.db.share_group_instance_delete(context.elevated(),
+            self.db.share_group_instance_delete(context,
                                                 share_group_instance_id)
             return
 
@@ -355,6 +362,8 @@ class API(base.Base):
             LOG.exception(
                 "Failed to update quota for deleting share group: %s", e)
 
+        # Only need to update share group instance 's status in db because
+        # share group's status shares its active instance's.
         share_group_instance = self.db.share_group_instance_update(
             context, share_group_instance_id,
             {'status': constants.STATUS_DELETING,
@@ -401,6 +410,20 @@ class API(base.Base):
 
         return share_groups
 
+    def _db_share_group_snapshot_member_create(self, context,
+                                               share, share_instance,
+                                               group_snap_instance):
+        member_options = {
+            'user_id': context.user_id,
+            'project_id': context.project_id,
+            'status': constants.STATUS_CREATING,
+            'size': share['size'],
+            'share_proto': share['share_proto'],
+            'share_instance_id': share_instance['id'],
+            'share_group_snapshot_instance_id': group_snap_instance['id'],
+        }
+        self.db.share_group_snapshot_member_create(context, member_options)
+
     def create_share_group_snapshot(self, context, name=None, description=None,
                                     share_group_id=None):
         """Create new share group snapshot."""
@@ -418,6 +441,8 @@ class API(base.Base):
             msg = (_("Share group status must be %s")
                    % constants.STATUS_AVAILABLE)
             raise exception.InvalidShareGroup(reason=msg)
+
+        options['share_group_instance_id'] = share_group.instance['id']
 
         # Create members for every share in the group
         shares = self.db.share_get_all_by_share_group_id(
@@ -441,30 +466,58 @@ class API(base.Base):
 
         snap = {}
         try:
+            # This will create share group snapshot instance too.
             snap = self.db.share_group_snapshot_create(context, options)
-            members = []
             for s in shares:
-                member_options = {
-                    'share_group_snapshot_id': snap['id'],
+                self._db_share_group_snapshot_member_create(context, s,
+                                                            s.instance,
+                                                            snap.instance)
+
+            # Cast to share manager
+            if share_group.has_replicas:
+                # Create share group snapshot instance and members for each
+                # share group replica.
+                group_replicas = (
+                    self.db.share_group_replica_get_all_by_share_group(
+                        context, share_group_id))
+                active_group_replica_id = share_group.instance['id']
+                group_snap_instance_data = {
                     'user_id': context.user_id,
                     'project_id': context.project_id,
                     'status': constants.STATUS_CREATING,
-                    'size': s['size'],
-                    'share_proto': s['share_proto'],
-                    'share_instance_id': s.instance['id']
                 }
-                member = self.db.share_group_snapshot_member_create(
-                    context, member_options)
-                members.append(member)
+                for group_replica in group_replicas:
+                    if group_replica['id'] == active_group_replica_id:
+                        continue
 
-            # Cast to share manager
-            self.share_rpcapi.create_share_group_snapshot(
-                context, snap, share_group['host'])
+                    group_snap_instance_data.update(
+                        {'share_group_instance_id': group_replica['id']})
+                    replica_snap_instance = (
+                        self.db.share_group_snapshot_instance_create(
+                            context, snap['id'], group_snap_instance_data))
+
+                    for s in shares:
+                        for share_instance in s.instances:
+                            if (share_instance['share_group_instance_id']
+                                    == group_replica['id']):
+                                self._db_share_group_snapshot_member_create(
+                                    context, s, share_instance,
+                                    replica_snap_instance)
+                                break
+
+                self.share_rpcapi.create_replicated_share_group_snapshot(
+                    context, share_group, snap)
+            else:
+                self.share_rpcapi.create_share_group_snapshot_instance(
+                    context, snap.instance, share_group['host'])
         except Exception:
             with excutils.save_and_reraise_exception():
-                # This will delete the snapshot and all of it's members
+                # This will delete the snapshot instance, all of it's members
+                # and the snapshot if the snapshot instance is the last
+                # instance of the snapshot.
                 if snap:
-                    self.db.share_group_snapshot_destroy(context, snap['id'])
+                    self.db.share_group_snapshot_instance_delete(
+                        context, snap.instance['id'])
                 QUOTAS.rollback(context, reservations)
 
         try:
@@ -485,8 +538,17 @@ class API(base.Base):
                      " %(statuses)s") % {"statuses": statuses})
             raise exception.InvalidShareGroupSnapshot(reason=msg)
 
-        self.db.share_group_snapshot_update(
-            context, snap_id, {'status': constants.STATUS_DELETING})
+        group_snap_instances = self.db.share_group_snapshot_instance_get_all(
+            context, filters={'share_group_snapshot_id': snap_id})
+        for group_snap_instance in group_snap_instances:
+            self.db.share_group_snapshot_instance_update(
+                context, group_snap_instance['id'],
+                {'status': constants.STATUS_DELETING})
+            for share_snap_instance in group_snap_instance.get(
+                    'share_group_snapshot_members', []):
+                self.db.share_snapshot_instance_update(
+                    context, share_snap_instance['id'],
+                    {'status': constants.STATUS_DELETING})
 
         try:
             reservations = QUOTAS.reserve(
@@ -502,8 +564,12 @@ class API(base.Base):
                  "%s"), e)
 
         # Cast to share manager
-        self.share_rpcapi.delete_share_group_snapshot(
-            context, snap, share_group['host'])
+        if share_group.has_replicas:
+            self.share_rpcapi.delete_replicated_share_group_snapshot(
+                context, share_group, snap)
+        else:
+            self.share_rpcapi.delete_share_group_snapshot_instance(
+                context, snap.instance, share_group['host'])
 
         if reservations:
             QUOTAS.commit(
@@ -728,13 +794,26 @@ class API(base.Base):
             'status': constants.STATUS_CREATING,
         }
 
-        replica = {}
+        new_group_replica = {}
+        new_group_snap_instances = []
         try:
-            replica = self.db.share_group_instance_create(
+            new_group_replica = self.db.share_group_instance_create(
                 context, share_group_id, group_instance_values)
 
+            existing_group_snapshots = self.db.share_group_snapshot_get_all(
+                context, filters={'share_group_id': share_group_id})
+            group_snap_instance_data = {
+                'status': constants.STATUS_CREATING,
+                'share_group_instance_id': new_group_replica['id'],
+            }
+            for group_snapshot in existing_group_snapshots:
+                new_group_snap_instances.append(
+                    self.db.share_group_snapshot_instance_create(
+                        context, group_snapshot[id],
+                        group_snap_instance_data)['id'])
+
             for shr in shares:
-                self.db.share_instance_create(
+                new_share_instance = self.db.share_instance_create(
                     context, shr['id'],
                     {'share_network_id': share_network_id,
                      'status': constants.STATUS_CREATING,
@@ -743,26 +822,40 @@ class API(base.Base):
                      'availability_zone_id': az_id,
                      'share_type_id': shr['instance']['share_type_id'],
                      'cast_rules_to_readonly': cast_rules_to_readonly,
-                     'share_group_instance_id': replica['id']},)
+                     'share_group_instance_id': new_group_replica['id']},)
+
+                for new_group_snap_instance in new_group_snap_instances:
+                    self._db_share_group_snapshot_member_create(
+                        context, shr, new_share_instance,
+                        new_group_snap_instance)
+
+            # TODO(RyanLiang): handle individual snapshots of shares in the
+            # group, or disable the creation of share snapshot if the share is
+            # in a group, let the user create share group snapshot instead.
+
             QUOTAS.commit(context, reservations)
         except Exception:
             with excutils.save_and_reraise_exception():
                 try:
+                    # It will delete the group snapshot instance and all of
+                    # it's members - the share snapshot instances.
+                    for new_group_snap_instance in new_group_snap_instances:
+                        self.db.share_group_snapshot_instance_delete(
+                            context, new_group_snap_instance['id'])
+
                     # It will delete the group replica and all of it's members
                     # - the share replicas.
-                    if replica:
-                        self.db.share_group_replica_delete(context,
-                                                           replica['id'])
+                    if new_group_replica:
+                        self.db.share_group_replica_delete(
+                            context, new_group_replica['id'])
                 finally:
                     QUOTAS.rollback(context, reservations)
 
         self.db.share_group_replica_update(
-            context, replica['id'],
+            context, new_group_replica['id'],
             {'replica_state': constants.REPLICA_STATE_OUT_OF_SYNC})
 
-        # TODO(RyanLiang): handle snapshots of shares in the group.
-
-        request_spec = {'share_group_instance_id': replica['id']}
+        request_spec = {'share_group_instance_id': new_group_replica['id']}
         request_spec.update(group_instance_values)
         request_spec['availability_zones'] = set(all_azs)
         request_spec['share_types'] = all_share_types
@@ -777,9 +870,9 @@ class API(base.Base):
         self.scheduler_rpcapi.create_share_group_replica(
             context, request_spec=request_spec, filter_properties={}
         )
-        return replica
+        return new_group_replica
 
-    def delete_share_group_replica(self, context, group_replica, force=False):
+    def delete_share_group_replica(self, context, group_replica):
         """Deletes the share group replica."""
         # Disallow deletion of ONLY active replica, *even* when this
         # operation is forced.
@@ -805,16 +898,24 @@ class API(base.Base):
                                          {'status': constants.STATUS_DELETING})
 
         if not group_replica['host']:
-            # TODO(RyanLiang): handle snapshots of shares in the group.
+            group_snap_instances = (
+                self.db.share_group_snapshot_instance_get_all(
+                    context,
+                    filters={'share_group_instance_id': group_replica_id}))
+            for group_snap_instance in group_snap_instances:
+                self.db.share_group_snapshot_instance_delete(
+                    context, group_snap_instance['id'])
+
+            # TODO(RyanLiang): handle individual snapshots of shares in the
+            # group, or disable the creation of share snapshot if the share is
+            # in a group, let the user create share group snapshot instead.
 
             # Delete the group replica from the database.
             self.db.share_group_replica_delete(context, group_replica_id)
         else:
 
             self.share_rpcapi.delete_share_group_replica(context,
-                                                         group_replica,
-                                                         force=force)
-        # TODO(RyanLiang): check quota or not.
+                                                         group_replica)
 
     def promote_share_group_replica(self, context, share_group_replica):
         share_group_replica_id = share_group_replica['id']
