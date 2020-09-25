@@ -4168,7 +4168,7 @@ class ShareManager(manager.SchedulerDependentManager):
 
         try:
             # TODO(ameade): Add notification for create.start
-            LOG.info("Share group instance %s: creating",
+            LOG.info("Share group instance %s creating",
                      share_group_instance_id)
 
             model_update, share_update_list = None, None
@@ -4230,7 +4230,7 @@ class ShareManager(manager.SchedulerDependentManager):
                     self.db.share_instance_update(
                         context, share['id'],
                         {'status': constants.STATUS_ERROR})
-                LOG.error("Share group instance %s: create failed",
+                LOG.error("Share group instance %s create failed",
                           share_group_instance_id)
 
         now = timeutils.utcnow()
@@ -4252,7 +4252,7 @@ class ShareManager(manager.SchedulerDependentManager):
         self.db.share_group_instance_update(context, share_group_instance_id,
                                             updates,
                                             with_share_group_data=True)
-        LOG.info("Share group instance %s: created successfully",
+        LOG.info("Share group instance %s created successfully",
                  share_group_instance_id)
 
         # TODO(ameade): Add notification for create.end
@@ -4278,7 +4278,7 @@ class ShareManager(manager.SchedulerDependentManager):
         # TODO(ameade): Add notification for delete.start
 
         try:
-            LOG.info("Share group instance %s: deleting",
+            LOG.info("Share group instance %s deleting",
                      share_group_instance_id)
             share_server = self._get_share_server(context,
                                                   share_group_instance)
@@ -4295,11 +4295,11 @@ class ShareManager(manager.SchedulerDependentManager):
                     context,
                     share_group_instance_id,
                     {'status': constants.STATUS_ERROR})
-                LOG.error("Share group instance %s: delete failed",
+                LOG.error("Share group instance %s delete failed",
                           share_group_instance_id)
 
         self.db.share_group_instance_delete(context, share_group_instance_id)
-        LOG.info("Share group instance %s: deleted successfully",
+        LOG.info("Share group instance %s deleted successfully",
                  share_group_instance_id)
 
         # TODO(ameade): Add notification for delete.end
@@ -4320,7 +4320,7 @@ class ShareManager(manager.SchedulerDependentManager):
         updated_members_ids = []
 
         try:
-            LOG.info("Share group snapshot instance %s: creating",
+            LOG.info("Share group snapshot instance %s creating",
                      share_group_snapshot_instance_id)
             share_server = self._get_share_server(
                 context, snap_instance_ref['share_group_instance'])
@@ -4386,7 +4386,7 @@ class ShareManager(manager.SchedulerDependentManager):
                     context,
                     snap_instance_ref['id'],
                     {'status': constants.STATUS_ERROR})
-                LOG.error("Share group snapshot instance %s: create failed",
+                LOG.error("Share group snapshot instance %s create failed",
                           share_group_snapshot_instance_id)
 
         for member in (snap_instance_ref.get('share_group_snapshot_members')
@@ -4400,7 +4400,7 @@ class ShareManager(manager.SchedulerDependentManager):
         self.db.share_group_snapshot_instance_update(
             context, snap_instance_ref['id'],
             {'status': status, 'updated_at': now})
-        LOG.info("Share group snapshot instance %s: created successfully",
+        LOG.info("Share group snapshot instance %s created successfully",
                  share_group_snapshot_instance_id)
 
         return snap_instance_ref['id']
@@ -4419,7 +4419,7 @@ class ShareManager(manager.SchedulerDependentManager):
         snapshot_instance_update = False
 
         try:
-            LOG.info("Share group snapshot instance %s: deleting",
+            LOG.info("Share group snapshot instance %s deleting",
                      share_group_snapshot_instance_id)
 
             share_server = self._get_share_server(
@@ -4448,7 +4448,7 @@ class ShareManager(manager.SchedulerDependentManager):
                     context,
                     snap_instance_ref['id'],
                     {'status': constants.STATUS_ERROR})
-                LOG.error("Share group snapshot instance %s: delete failed",
+                LOG.error("Share group snapshot instance %s delete failed",
                           snap_instance_ref['name'])
         # This will delete the snapshot instance, all of it's members
         # and the snapshot if the snapshot instance is the last
@@ -4456,7 +4456,7 @@ class ShareManager(manager.SchedulerDependentManager):
         self.db.share_group_snapshot_instance_delete(
             context, share_group_snapshot_instance_id)
 
-        LOG.info("Share group snapshot instance %s: deleted successfully",
+        LOG.info("Share group snapshot instance %s deleted successfully",
                  share_group_snapshot_instance_id)
 
     def _get_replica_snapshots_for_group_snapshot(self, context,
@@ -4610,7 +4610,7 @@ class ShareManager(manager.SchedulerDependentManager):
         }
 
         group_snapshots = self.db.share_group_snapshot_get_all(
-            context, fileters=dict(share_group_id=share_group_id))
+            context, filters=dict(share_group_id=share_group_id))
         group_replica_snapshots = [
             self._get_replica_snapshots_for_group_snapshot(
                 context, group_snap['id'], _active_replica['id'],
@@ -4622,7 +4622,7 @@ class ShareManager(manager.SchedulerDependentManager):
             share_replica_snapshots.extend(
                 self._get_share_replica_snapshots(context, share_replica))
 
-        LOG.info('Share group replica %s: creating', share_group_replica_id)
+        LOG.info('Share group replica %s creating', share_group_replica_id)
 
         try:
             group_replica_update, share_replicas_update = (
@@ -4704,7 +4704,7 @@ class ShareManager(manager.SchedulerDependentManager):
 
         :param share_group_id: used in `locked_share_group_replica_operation`.
         """
-        LOG.info('Share group replica %s: deleting', share_group_replica_id)
+        LOG.info('Share group replica %s deleting', share_group_replica_id)
 
         context = context.elevated()
 
@@ -4793,14 +4793,14 @@ class ShareManager(manager.SchedulerDependentManager):
                         {'status': constants.STATUS_ERROR_DELETING,
                          'replica_state': constants.STATUS_ERROR})
                 _set_group_replica_status_error_deleting(ex=e)
-                LOG.error('Share group replica %s: delete failed',
+                LOG.error('Share group replica %s delete failed',
                           share_group_replica_id)
 
         # This will delete all the member share replicas of the share group
         # replica.
         self.db.share_group_replica_delete(context, share_group_replica_id)
 
-        LOG.info('Share group replica %s: deleted successfully',
+        LOG.info('Share group replica %s deleted successfully',
                  share_group_replica_id)
 
     @utils.require_driver_initialized
@@ -4837,7 +4837,7 @@ class ShareManager(manager.SchedulerDependentManager):
                 exception=ex
             )
 
-        LOG.info('Share group replica %s: promoting to active',
+        LOG.info('Share group replica %s promoting to active',
                  share_group_replica_id)
         context = context.elevated()
 
@@ -5007,7 +5007,7 @@ class ShareManager(manager.SchedulerDependentManager):
                 cast_rules_to_readonly=default_cast_rules_to_readonly,
             )
 
-        LOG.info('Share group replica %s: promoted to active state '
+        LOG.info('Share group replica %s promoted to active state '
                  'successfully.', share_group_replica_id)
 
     @locked_share_group_replica_operation
@@ -5052,7 +5052,7 @@ class ShareManager(manager.SchedulerDependentManager):
                   group_replica_id)
 
         group_snapshots = self.db.share_group_snapshot_get_all(
-            context, fileters=dict(share_group_id=share_group_id))
+            context, filters=dict(share_group_id=share_group_id))
         _active_replica = [
             r for r in group_replicas
             if r['replica_state'] == constants.REPLICA_STATE_ACTIVE][0]

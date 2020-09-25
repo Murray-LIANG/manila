@@ -60,6 +60,7 @@ class API(base.Base):
         # parent share group if a share group snapshot is specified,
         # else, it will be set in the share manager.
         share_server_id = None
+        source_share_group_snapshot_instance_id = None
         if source_share_group_snapshot_id:
             share_group_snapshot = self.db.share_group_snapshot_get(
                 context, source_share_group_snapshot_id)

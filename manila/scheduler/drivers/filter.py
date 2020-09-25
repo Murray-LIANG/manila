@@ -185,27 +185,6 @@ class FilterScheduler(base.Scheduler):
             # snapshot clone creation request.
             share_type.get('extra_specs', {}).pop('share_backend_name', None)
 
-        active_group_replica_host = request_spec.get(
-            'active_group_replica_host')
-        group_replication_domain = None
-        if active_group_replica_host:
-            try:
-                match_host = [
-                    host for host in
-                    self.host_manager.get_all_host_states_share(elevated)
-                    if host.host == active_group_replica_host
-                ][0]
-                group_replication_domain = match_host.group_replication_domain
-            except IndexError:
-                # Ignore if active_group_replica_host not found.
-                # TODO(RyanLiang): Raise error if not found, because it will
-                # cause the share group replica being scheduled to a host
-                # with the same group_replication_type but with
-                # group_replication_domain=None, however this case almost
-                # never happens unless the share driver reports None
-                # group_replication_domain.
-                pass
-
         if filter_properties is None:
             filter_properties = {}
         self._populate_retry_share(filter_properties, resource_properties)
@@ -217,8 +196,6 @@ class FilterScheduler(base.Scheduler):
                                   'resource_type': resource_type,
                                   'share_group': share_group,
                                   'replication_domain': replication_domain,
-                                  'group_replication_domain':
-                                      group_replication_domain,
                                   })
 
         self.populate_filter_properties_share(request_spec, filter_properties)
@@ -406,6 +383,38 @@ class FilterScheduler(base.Scheduler):
 
         return weighed_hosts
 
+    def _get_replication_domain_of_active_share_group(
+            self, context, active_group_replica_host):
+
+        if active_group_replica_host is None:
+            return None
+
+        try:
+            match_host = [
+                host for host in
+                self.host_manager.get_all_host_states_share(context)
+                if host.host == active_group_replica_host
+            ][0]
+            return match_host.group_replication_domain
+        except IndexError:
+            all_hosts = [
+                host.host for host in
+                self.host_manager.get_all_host_states_share(context)]
+            LOG.warning('The host %(active)s of active group replica '
+                        'not found in the full host list (%(full)s) '
+                        'of scheduler.',
+                        {'active': active_group_replica_host,
+                         'full': ','.join(all_hosts)})
+
+            # Ignore if active_group_replica_host not found.
+            # TODO(RyanLiang): Raise error if not found, because it will
+            # cause the share group replica being scheduled to a host
+            # with the same group_replication_type but with
+            # group_replication_domain=None, however this case almost
+            # never happens unless the share driver reports None
+            # group_replication_domain.
+            return None
+
     def _get_weighted_hosts_for_share_group_type(self, context, request_spec,
                                                  share_group_type):
         config_options = self._get_configuration_options()
@@ -420,6 +429,9 @@ class FilterScheduler(base.Scheduler):
             'config_options': config_options,
             'share_group_type': share_group_type,
             'resource_type': share_group_type,
+            'group_replication_domain':
+                self._get_replication_domain_of_active_share_group(
+                    context, request_spec.get('active_group_replica_host')),
         }
 
         hosts, last_filter = self.host_manager.get_filtered_hosts(

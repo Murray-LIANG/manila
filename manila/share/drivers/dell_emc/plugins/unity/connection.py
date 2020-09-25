@@ -628,6 +628,8 @@ class UnityStorageConnection(driver.StorageConnection):
         if self.driver_handles_share_servers:
             stats_dict['share_group_stats'][
                 'group_replication_type'] = const.GROUP_REPLICATION_TYPE_DR
+            stats_dict['share_group_stats'][
+                'multiple_group_replicas_support_on_same_backend'] = False
 
     def get_pool(self, share):
         """Get the pool name of the share."""

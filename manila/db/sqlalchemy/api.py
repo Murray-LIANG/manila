@@ -4679,6 +4679,10 @@ def _extract_share_group_instance_values(values):
     share_group_instance_values, share_group_values = (
         _extract_subdict_by_fields(values, share_group_instance_model_fields)
     )
+    same_fields = ['user_id', 'project_id']
+    for field in same_fields:
+        if field in share_group_values:
+            share_group_instance_values[field] = share_group_values[field]
     return share_group_instance_values, share_group_values
 
 
@@ -5310,6 +5314,11 @@ def _extract_share_group_snapshot_instance_values(values):
     group_snapshot_instance_values, group_snapshot_values = (
         _extract_subdict_by_fields(values, group_snapshot_instance_fields)
     )
+    same_fields = ['user_id', 'project_id']
+    for field in same_fields:
+        if field in group_snapshot_values:
+            group_snapshot_instance_values[field] = (
+                group_snapshot_values[field])
     return group_snapshot_instance_values, group_snapshot_values
 
 

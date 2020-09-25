@@ -297,6 +297,7 @@ class EMCShareDriver(driver.ShareDriver):
             share_group_stats=dict(
                 consistent_snapshot_support=False,
                 group_replication_type=None,
+                multiple_group_replicas_support_on_same_backend=True,
             )
         )
 

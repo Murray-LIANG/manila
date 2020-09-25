@@ -22,6 +22,7 @@ from manila import exception
 from manila.i18n import _
 from manila.share import configuration
 from manila.share import driver
+from manila.share.drivers.dell_emc import driver as dell_emc_driver
 from manila.share.drivers.dell_emc.plugins.unity import connection
 
 LOG = log.getLogger(__name__)
@@ -132,5 +133,6 @@ def get_backend_config(conf, backend_name):
 
     config = configuration.Configuration(driver.share_opts,
                                          config_group=backend_name)
+    config.append_config_values(dell_emc_driver.EMC_NAS_OPTS)
     config.append_config_values(connection.UNITY_OPTS)
     return config
