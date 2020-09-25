@@ -467,16 +467,20 @@ class UnityClient(object):
         return active_nas_server_name
 
     def enable_replication(self, dr_client, active_nas_server_name,
-                           dr_nas_server_name, dr_pool_name,
-                           max_out_of_sync_minutes, dr_new_ip_addr=None):
+                           dr_nas_server_name, max_out_of_sync_minutes,
+                           dr_pool_name=None, dr_new_ip_addr=None,
+                           reuse_dr_resources=False):
         """Enables the nas server replication from this client to dr_client.
+
+        dr_pool_name could be None only when reuse_dr_resources=True and there
+        is an existing nas server and/or filesystem usable.
 
         dr_client could connect to the same Unity for local replications.
         """
-        # Manila share_server_id xxx or OS-DR_xxx will be the name of current
-        # active nas server.
         active_nas_server = self.get_nas_server(active_nas_server_name)
-        dr_pool_id = dr_client.get_pool(name=dr_pool_name).get_id()
+        dr_pool_id = None
+        if dr_pool_name:
+            dr_pool_id = dr_client.get_pool(name=dr_pool_name).get_id()
         remote_system = None
         dst_sp = None
         if not self.is_local_replication(dr_client):
@@ -486,11 +490,11 @@ class UnityClient(object):
             dst_sp = active_nas_server.home_sp.to_node_enum()
         active_filesystems = active_nas_server.filesystems or []
         nas_rep = active_nas_server.replicate_with_dst_resource_provisioning(
-            max_out_of_sync_minutes, dr_pool_id,
+            max_out_of_sync_minutes, dst_pool_id=dr_pool_id,
             dst_nas_server_name=dr_nas_server_name,
-            remote_system=remote_system,
-            dst_sp=dst_sp,
+            remote_system=remote_system, dst_sp=dst_sp,
             filesystems=active_filesystems,
+            reuse_dst_resource=reuse_dr_resources,
         )
 
         # Manual sync the nas server replication session to make sure the share
@@ -508,42 +512,66 @@ class UnityClient(object):
                                                   dr_nas_server, remote_system)
 
     def disable_replication(self, dr_client, active_nas_server_name,
-                            dr_nas_server_name):
+                            dr_nas_server_name, keep_dr_resources=False):
         """Disables the nas server replication."""
-
-        active_nas_server = self.get_nas_server(active_nas_server_name)
-
         try:
             dr_nas_server = dr_client.get_nas_server(dr_nas_server_name)
         except storops_ex.UnityResourceNotFoundError:
             LOG.warning('DR side nas server %s not found. Skipping '
-                        'deleting this replication and all related '
-                        'nas server, filesystems and shares.',
+                        'deleting this replication and all related filesystem '
+                        'replications, nas server, filesystems, shares '
+                        'from DR Unity.',
                         dr_nas_server_name)
             return
+        except storops_ex.StoropsConnectTimeoutError:
+            LOG.warning('DR Unity %s is down. Skipping deleting this '
+                        'replication and all related filesystem replications, '
+                        'nas server, filesystems shares from DR Unity.',
+                        dr_client.unity_host)
+            return
 
-        remote_system = self.get_remote_system(dr_client.get_serial_number())
+        try:
+            active_nas_server = self.get_nas_server(active_nas_server_name)
 
-        # Delete the replication sessions on filesystems.
-        for active_fs, dr_fs in self._zip_active_dr_filesystems(
-                active_nas_server.filesystems, dr_nas_server.filesystems):
-            active_fs.delete_replications(remote_system=remote_system,
-                                          dst_filesystem=dr_fs)
+            remote_system = self.get_remote_system(
+                dr_client.get_serial_number())
 
-        # Delete the replication session on nas server.
-        active_nas_server.delete_replications(remote_system=remote_system,
-                                              dst_nas_server=dr_nas_server)
+            # Delete the replication sessions on filesystems.
+            for active_fs, dr_fs in self._zip_active_dr_filesystems(
+                    active_nas_server.filesystems, dr_nas_server.filesystems):
+                active_fs.delete_replications(remote_system=remote_system,
+                                              dst_filesystem=dr_fs)
 
-        # Delete dr side filesystems then nas server. No need to delete the
-        # shares on the dr destination nas server. They will be deleted
-        # together with filesystems.
-        for fs in (dr_nas_server.filesystems or []):
-            dr_client.delete_filesystem(fs, force_snap_delete=True)
-        dr_client.delete_nas_server(dr_nas_server_name)
+            # Delete the replication session on nas server.
+            active_nas_server.delete_replications(remote_system=remote_system,
+                                                  dst_nas_server=dr_nas_server)
+
+        except storops_ex.StoropsConnectTimeoutError:
+            LOG.info('Active Unity %s is down. Unable to disable the '
+                     'replication from the active side. Deleting the '
+                     'replication and all related filesystem replications, '
+                     'nas server, filesystems shares from DR Unity.',
+                     'without sync', self.unity_host)
+
+            for dr_fs in (dr_nas_server.filesystems or []):
+                # It's safe because there must be only one replications to the
+                # dr filesystem.
+                dr_fs.delete_replications()
+
+            # It's safe because there must be only one replications to the
+            # dr nas server.
+            dr_nas_server.delete_replications()
+
+        if not keep_dr_resources:
+            # Delete dr side filesystems then nas server. No need to delete the
+            # shares on the dr destination nas server. They will be deleted
+            # together with filesystems.
+            for fs in (dr_nas_server.filesystems or []):
+                dr_client.delete_filesystem(fs, force_snap_delete=True)
+            dr_client.delete_nas_server(dr_nas_server_name)
 
     def failover_replication(self, dr_client, active_nas_server_name,
                              dr_nas_server_name):
-        is_planned = True
         try:
             # Planned fail over which fails over with sync from active side.
             active_nas_server = self.get_nas_server(active_nas_server_name)

@@ -1136,6 +1136,24 @@ class UnityStorageConnection(driver.StorageConnection):
         active_client.failover_replication(self.client, active_nas_server_name,
                                            dr_nas_server_name)
 
+        # Break down all the replications from original active replica to other
+        # dr replicas.
+        for replica in group_replicas_all:
+            if replica['id'] not in (active_replica['id'],
+                                     group_replica_promoting['id']):
+                rep_nas_server = replica['share_server_id']
+                active_client.disable_replication(self.client,
+                                                  active_nas_server_name,
+                                                  rep_nas_server,
+                                                  keep_dr_resources=True)
+
+                # Build up replications from new active replica to other dr
+                # replicas.
+                rep_client = self._setup_replica_client(replica)
+                self.client.enable_replication(
+                    rep_client, dr_nas_server_name, rep_nas_server,
+                    self.replication_rpo, reuse_dr_resources=True)
+
         # Only change original active share group replica and share replicas'
         # replica_state to in_sync. share/manager will set the promoting share
         # group replica and share replicas' replica_state to active.

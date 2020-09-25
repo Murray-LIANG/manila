@@ -87,19 +87,21 @@ class ShareGroupReplicationFilter(base_host.BaseHostFilter):
             return False
 
         if not host_state.multiple_group_replicas_support_on_same_backend:
+            host_backend = share_utils.extract_host(host_state.host,
+                                                    level='backend')
             existing_replica_backends = [
                 share_utils.extract_host(existing_host, level='backend')
                 for existing_host in existing_replica_hosts]
-            if len(existing_replica_backends) >= 2:
+            matched_count = existing_replica_backends.count(host_backend)
+            if matched_count >= 2:
                 LOG.debug(
                     'Skipping host %(host)s since it does not support '
                     'multiple share group replicas on the same backend and '
                     'the count of existing replicas on its backend '
                     '%(backend)s is %(count)s.',
                     {'host': host_state.host,
-                     'backend': share_utils.extract_host(host_state.host,
-                                                         level='backend'),
-                     'count': len(existing_replica_backends)})
+                     'backend': host_backend,
+                     'count': matched_count})
                 return False
 
         return group_replication_type == host_state.group_replication_type
