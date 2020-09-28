@@ -1346,7 +1346,8 @@ class ShareDriver(object):
             consistent_snapshot_support=None,
             group_replication_type=None,
             group_replication_domain=self.group_replication_domain,
-            multiple_group_replicas_support_on_same_backend=True,
+            # None means no limit on group replicas count.
+            max_group_replicas_count_on_same_backend=None,
         )
         sg_stats = data.get('share_group_stats', {}) if data else {}
         common['share_group_stats'].update(sg_stats)

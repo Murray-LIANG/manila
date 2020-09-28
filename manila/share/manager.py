@@ -4816,8 +4816,9 @@ class ShareManager(manager.SchedulerDependentManager):
                                                   share_replicas=None,
                                                   detail=None, ex=None):
             for share_replica in (share_replicas or []):
-                self.db.share_replica_update(context, share_replica['id'],
-                                             {'status': status})
+                share_replica = self.db.share_replica_update(
+                    context, share_replica['id'], {'status': status},
+                    with_share_data=True)
                 self.message_api.create(
                     context,
                     message_field.Action.PROMOTE,
@@ -4829,7 +4830,7 @@ class ShareManager(manager.SchedulerDependentManager):
             self.db.share_group_replica_update(context, group_replica['id'],
                                                {'status': status})
             self.message_api.create(
-                context, message_field.Action.CREATE,
+                context, message_field.Action.PROMOTE,
                 group_replica['project_id'],
                 resource_type=message_field.Resource.SHARE_GROUP_REPLICA,
                 resource_id=group_replica['id'],

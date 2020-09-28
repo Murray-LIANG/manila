@@ -81,6 +81,12 @@ UNITY_OPTS = [
                     'Make sure a sync type replication connection is set up '
                     'before using it. Refer to configuration doc for more '
                     'detail.'),
+    cfg.StrOpt('unity_enable_local_replication',
+               default=False,
+               help='A flag to specify whether local replication is enabled '
+                    'or not. Default is False. Set it to True carefully '
+                    'because it could cause some replica out_of_sync in some '
+                    'cases. Refer to unity driver document for detail.'),
 ]
 
 CONF = cfg.CONF
@@ -119,6 +125,7 @@ class UnityStorageConnection(driver.StorageConnection):
         self.choose_share_server_compatible_with_share_group_support = True
         self.share_group_replication_support = True
         self.replication_rpo = 60
+        self.max_replicas_count_on_same_unity = 1
 
         # props from super class.
         self.driver_handles_share_servers = (True, False)
@@ -156,13 +163,9 @@ class UnityStorageConnection(driver.StorageConnection):
         pool_name = config.unity_server_meta_pool
         self._config_pool(pool_name)
 
-        # Although `unity_replication_nas_server` is required when
-        # DHSS=False, but don't do the check here, leave it to logic of
-        # creating share group replications, because share group replications
-        # may not be enabled.
-        self.replication_nas_server = config.safe_get(
-            'unity_replication_nas_server')
         self.replication_rpo = config.safe_get('unity_replication_rpo')
+        if config.safe_get('unity_enable_local_replication'):
+            self.max_replicas_count_on_same_unity = 2
 
     def get_server_name(self, share_server=None):
         if not self.driver_handles_share_servers:
@@ -626,10 +629,11 @@ class UnityStorageConnection(driver.StorageConnection):
         # 3) only the `dr` type of replications due to the destination share
         #   in the replication cannot be mounted for read or write.
         if self.driver_handles_share_servers:
-            stats_dict['share_group_stats'][
+            group_stats = stats_dict['share_group_stats']
+            group_stats[
                 'group_replication_type'] = const.GROUP_REPLICATION_TYPE_DR
-            stats_dict['share_group_stats'][
-                'multiple_group_replicas_support_on_same_backend'] = False
+            group_stats['max_group_replicas_count_on_same_backend'] = (
+                self.max_replicas_count_on_same_unity)
 
     def get_pool(self, share):
         """Get the pool name of the share."""
@@ -1057,6 +1061,18 @@ class UnityStorageConnection(driver.StorageConnection):
                 reason='No active replica in the share group replicas.')
 
         active_client = self._setup_replica_client(active_replica)
+
+        if (len(group_replicas_all) > 2 and
+                not active_client.is_unity_version('5.1.0')):
+            # The count of all replicas greater than 2, means that there is at
+            # least one replica except the active one and creating one. It
+            # is not supported if the active Unity OE is prior to 5.1.0.
+            raise exception.EMCUnityError(
+                err='OE version of the active Unity is %s, which does not '
+                    'support to create more than 1 replica for the same nas '
+                    'server. Upgrade Unity OE to 5.1.0 or later.'
+                    % active_client.system.system_version)
+
         active_nas_server_name = active_replica['share_server_id']
 
         if share_server is None:
@@ -1073,7 +1089,8 @@ class UnityStorageConnection(driver.StorageConnection):
             'network_allocations'][0]['ip_address']
         nas_rep, fs_reps = active_client.enable_replication(
             self.client, active_nas_server_name, dr_nas_server_name,
-            dr_pool_name, self.replication_rpo, dr_new_ip_addr=dr_new_ip_addr)
+            self.replication_rpo, dr_pool_name=dr_pool_name,
+            dr_new_ip_addr=dr_new_ip_addr)
 
         group_replica_update = {
             'replica_state':
@@ -1125,6 +1142,18 @@ class UnityStorageConnection(driver.StorageConnection):
             resume.
         """
 
+        if (len(group_replicas_all) > 2 and
+                not self.client.is_unity_version('5.1.0')):
+            # There are at least three replicas (one active, two dr), which
+            # means the promoting dr system will have more than two
+            # replications after the promotion completes. It is not supported
+            # if the promoting Unity OE is prior to 5.1.0.
+            raise exception.EMCUnityError(
+                err='OE version of the promoting Unity is %s, which does not '
+                    'support to hold more than 1 replica for the same nas '
+                    'server. Upgrade Unity OE to 5.1.0 or later.'
+                    % self.client.system.system_version)
+
         active_replica = share_utils.get_active_replica(group_replicas_all)
         if active_replica is None:
             raise exception.InvalidInput(
@@ -1136,23 +1165,45 @@ class UnityStorageConnection(driver.StorageConnection):
         active_client.failover_replication(self.client, active_nas_server_name,
                                            dr_nas_server_name)
 
-        # Break down all the replications from original active replica to other
-        # dr replicas.
+        # If there are other dr replicas except the original active and
+        # promoting replicas, we need to tear down all the replications from
+        # original active replica to these replicas, and then build up
+        # replications from the new active replica.
+        replicated_systems = {
+            active_client.get_serial_number(): active_nas_server_name,
+            self.client.get_serial_number(): dr_nas_server_name}
         for replica in group_replicas_all:
-            if replica['id'] not in (active_replica['id'],
-                                     group_replica_promoting['id']):
-                rep_nas_server = replica['share_server_id']
-                active_client.disable_replication(self.client,
-                                                  active_nas_server_name,
-                                                  rep_nas_server,
-                                                  keep_dr_resources=True)
+            if replica['id'] in (active_replica['id'],
+                                 group_replica_promoting['id']):
+                continue
 
-                # Build up replications from new active replica to other dr
-                # replicas.
-                rep_client = self._setup_replica_client(replica)
-                self.client.enable_replication(
-                    rep_client, dr_nas_server_name, rep_nas_server,
-                    self.replication_rpo, reuse_dr_resources=True)
+            rep_nas_server = replica['share_server_id']
+            rep_client = self._setup_replica_client(replica)
+
+            only_tear_down = False
+            rep_system = rep_client.get_serial_number()
+            if rep_system in replicated_systems:
+                LOG.warning('Not support to create two or more replications '
+                            'to the same Unity for the same nas server '
+                            '%(nas)s. Unity %(unity)s already hosts the '
+                            'replica nas server %(rep)s. Cannot set up the '
+                            'second replica nas server %(sec)s on the same '
+                            'Unity. Then the second replica %(sec_rep)s will '
+                            'be always out_of_sync.',
+                            {'nas': dr_nas_server_name, 'unity': rep_system,
+                             'rep': replicated_systems[rep_system],
+                             'sec': rep_nas_server, 'sec_rep': replica['id']})
+                only_tear_down = True
+            else:
+                replicated_systems[rep_system] = rep_nas_server
+
+            self.client.rebuild_replication(
+                new_active_nas_name=dr_nas_server_name, dr_client=rep_client,
+                dr_nas_server_name=rep_nas_server,
+                orig_active_client=active_client,
+                orig_active_nas_name=active_nas_server_name,
+                max_out_of_sync_minutes=self.replication_rpo,
+                only_tear_down=only_tear_down)
 
         # Only change original active share group replica and share replicas'
         # replica_state to in_sync. share/manager will set the promoting share
@@ -1167,10 +1218,12 @@ class UnityStorageConnection(driver.StorageConnection):
                             'No update returned for it.',
                             share_replica['id'])
                 continue
-            share_replicas_update.append({active_share_replica['id']:
-                                          const.REPLICA_STATE_IN_SYNC})
+            share_replicas_update.append(
+                {'id': active_share_replica['id'],
+                 'replica_state': const.REPLICA_STATE_IN_SYNC})
 
-        return ([{active_replica['id']: const.REPLICA_STATE_IN_SYNC}],
+        return ([{'id': active_replica['id'],
+                  'replica_state': const.REPLICA_STATE_IN_SYNC}],
                 share_replicas_update)
 
     def update_share_group_replica_state(self, context,

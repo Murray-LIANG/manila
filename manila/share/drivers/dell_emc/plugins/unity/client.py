@@ -12,6 +12,7 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+from distutils import version
 import six
 
 from oslo_log import log
@@ -33,6 +34,7 @@ from manila import utils as manila_utils
 
 LOG = log.getLogger(__name__)
 
+# TODO(RyanLiang): delete it.
 NAME_PREFIX_DR_NAS_SERVER = 'OS-DR_'
 
 
@@ -476,6 +478,9 @@ class UnityClient(object):
         is an existing nas server and/or filesystem usable.
 
         dr_client could connect to the same Unity for local replications.
+
+        reuse_dr_resources will be ignored by storops when Unity OE is prior to
+        5.1.0.
         """
         active_nas_server = self.get_nas_server(active_nas_server_name)
         dr_pool_id = None
@@ -570,6 +575,10 @@ class UnityClient(object):
                 dr_client.delete_filesystem(fs, force_snap_delete=True)
             dr_client.delete_nas_server(dr_nas_server_name)
 
+        # Return this information for replication rebuild.
+        return {'dr_pool': dr_nas_server.pool,
+                'dr_file_interface': dr_nas_server.file_interface[0]}
+
     def failover_replication(self, dr_client, active_nas_server_name,
                              dr_nas_server_name):
         try:
@@ -603,6 +612,37 @@ class UnityClient(object):
                 dst_resource_id=dr_nas_server.get_id())[0]
             rep_session.failover(sync=False)
             rep_session.resume()
+
+    def rebuild_replication(self, new_active_nas_name,
+                            dr_client, dr_nas_server_name,
+                            orig_active_client, orig_active_nas_name,
+                            max_out_of_sync_minutes, only_tear_down=False):
+        """Rebuilds the replication for DR nas server.
+
+        The DR nas server with name=`dr_nas_server_name` is with replication
+        from the original active nas server with name=`orig_active_nas_name` on
+        the Unity to which `orig_active_client` is connecting before
+        rebuilding. The rebuild will tear down the original replication and
+        build up a new one from the nas server with name=`new_active_nas_name`
+        on the Unity to which `self` is connecting.
+        """
+        dr_resource = orig_active_client.disable_replication(
+            dr_client, orig_active_nas_name, dr_nas_server_name,
+            keep_dr_resources=self.is_unity_version('5.1.0'))
+
+        if only_tear_down:
+            return
+
+        if self.is_unity_version('5.1.0'):
+            self.enable_replication(
+                dr_client, new_active_nas_name, dr_nas_server_name,
+                max_out_of_sync_minutes, reuse_dr_resources=True)
+        else:
+            self.enable_replication(
+                dr_client, new_active_nas_name, dr_nas_server_name,
+                max_out_of_sync_minutes,
+                dr_pool_name=dr_resource['dr_pool'].name,
+                dr_new_ip_addr=dr_resource['dr_file_interface'].ip_address)
 
     def get_nas_server_and_fs_replications(self, dr_client,
                                            active_nas_server_name,
@@ -662,3 +702,12 @@ class UnityClient(object):
                 return self.get_snapshot(name)
 
         return _get_with_retry(name)
+
+    def is_unity_version(self, min_version, max_version=None):
+        """Returns True if min_version <= Unity OE version < max_version."""
+        curr_version = self.system.system_version
+        return (version.LooseVersion(min_version)
+                <= version.LooseVersion(curr_version)
+                and (not max_version or
+                     version.LooseVersion(curr_version)
+                     < version.LooseVersion(max_version)))

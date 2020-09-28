@@ -157,7 +157,7 @@ class HostState(object):
         self.sg_consistent_snapshot_support = None
         self.group_replication_type = None
         self.group_replication_domain = None
-        self.multiple_group_replicas_support_on_same_backend = None
+        self.max_group_replicas_count_on_same_backend = None
 
     def update_capabilities(self, capabilities=None, service=None):
         # Read-only capability dicts
@@ -353,9 +353,9 @@ class HostState(object):
             pool_cap['group_replication_domain'] = (
                 self.group_replication_domain)
 
-        if 'multiple_group_replicas_support_on_same_backend' not in pool_cap:
-            pool_cap['multiple_group_replicas_support_on_same_backend'] = (
-                self.multiple_group_replicas_support_on_same_backend)
+        if 'max_group_replicas_count_on_same_backend' not in pool_cap:
+            pool_cap['max_group_replicas_count_on_same_backend'] = (
+                self.max_group_replicas_count_on_same_backend)
 
     def update_backend(self, capability):
         self.share_backend_name = capability.get('share_backend_name')
@@ -384,9 +384,9 @@ class HostState(object):
             'share_group_stats', {}).get('group_replication_type')
         self.group_replication_domain = capability.get(
             'share_group_stats', {}).get('group_replication_domain')
-        self.multiple_group_replicas_support_on_same_backend = capability.get(
+        self.max_group_replicas_count_on_same_backend = capability.get(
             'share_group_stats', {}).get(
-            'multiple_group_replicas_support_on_same_backend')
+            'max_group_replicas_count_on_same_backend')
 
     def consume_from_share(self, share):
         """Incrementally update host state from an share."""
@@ -487,9 +487,8 @@ class PoolState(HostState):
                 'group_replication_type')
             self.group_replication_domain = capability.get(
                 'group_replication_domain')
-            self.multiple_group_replicas_support_on_same_backend = (
-                capability.get(
-                    'multiple_group_replicas_support_on_same_backend'))
+            self.max_group_replicas_count_on_same_backend = (
+                capability.get('max_group_replicas_count_on_same_backend'))
 
     def update_pools(self, capability):
         # Do nothing, since we don't have pools within pool, yet
