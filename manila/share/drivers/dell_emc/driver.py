@@ -298,6 +298,7 @@ class EMCShareDriver(driver.ShareDriver):
                 consistent_snapshot_support=False,
                 group_replication_type=None,
                 max_group_replicas_count_on_same_backend=None,
+                local_group_replication_support=True,
             )
         )
 

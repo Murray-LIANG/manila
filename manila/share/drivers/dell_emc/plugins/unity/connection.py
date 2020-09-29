@@ -125,7 +125,7 @@ class UnityStorageConnection(driver.StorageConnection):
         self.choose_share_server_compatible_with_share_group_support = True
         self.share_group_replication_support = True
         self.replication_rpo = 60
-        self.max_replicas_count_on_same_unity = 1
+        self.local_replication_enabled = False
 
         # props from super class.
         self.driver_handles_share_servers = (True, False)
@@ -164,8 +164,8 @@ class UnityStorageConnection(driver.StorageConnection):
         self._config_pool(pool_name)
 
         self.replication_rpo = config.safe_get('unity_replication_rpo')
-        if config.safe_get('unity_enable_local_replication'):
-            self.max_replicas_count_on_same_unity = 2
+        self.local_replication_enabled = config.safe_get(
+            'unity_enable_local_replication')
 
     def get_server_name(self, share_server=None):
         if not self.driver_handles_share_servers:
@@ -632,8 +632,9 @@ class UnityStorageConnection(driver.StorageConnection):
             group_stats = stats_dict['share_group_stats']
             group_stats[
                 'group_replication_type'] = const.GROUP_REPLICATION_TYPE_DR
-            group_stats['max_group_replicas_count_on_same_backend'] = (
-                self.max_replicas_count_on_same_unity)
+            group_stats['max_group_replicas_count_on_same_backend'] = 1
+            group_stats['local_group_replication_support'] = (
+                self.local_replication_enabled)
 
     def get_pool(self, share):
         """Get the pool name of the share."""

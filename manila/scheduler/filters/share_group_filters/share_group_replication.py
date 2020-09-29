@@ -89,6 +89,11 @@ class ShareGroupReplicationFilter(base_host.BaseHostFilter):
         # Host could report None, then means no limit on group replicas counts.
         max_count_allowed = host_state.max_group_replicas_count_on_same_backend
         if max_count_allowed:
+            # Allow schedule to the active replica's host one more time
+            # if the backend supports local replication.
+            if host_state.local_group_replication_support:
+                existing_replica_hosts.remove(active_group_replica_host)
+
             existing_replica_backends = [
                 share_utils.extract_host(existing_host, level='backend')
                 for existing_host in existing_replica_hosts]

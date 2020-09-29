@@ -53,6 +53,8 @@ def generate_stats(host_state, properties):
         'group_replication_type': host_state.group_replication_type,
         'max_group_replicas_count_on_same_backend':
             host_state.max_group_replicas_count_on_same_backend,
+        'local_group_replication_support':
+            host_state.local_group_replication_support,
         'provisioned_capacity_gb': host_state.provisioned_capacity_gb,
         'pools': host_state.pools,
         'max_over_subscription_ratio':

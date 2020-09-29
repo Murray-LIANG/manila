@@ -5108,7 +5108,10 @@ class ShareManager(manager.SchedulerDependentManager):
                                    group_replica_id):
             self.db.share_group_replica_update(
                 context, group_replica_id,
-                {'replica_state': group_replica_state})
+                {'replica_state': group_replica_state,
+                 'status': constants.STATUS_ERROR
+                    if group_replica_state == constants.STATUS_ERROR
+                    else constants.STATUS_AVAILABLE})
 
         for state_update in (share_replica_states or []):
             try:
@@ -5118,7 +5121,10 @@ class ShareManager(manager.SchedulerDependentManager):
                                            'share replica', share_replica_id):
                     self.db.share_replica_update(
                         context, share_replica_id,
-                        {'replica_state': share_replica_state})
+                        {'replica_state': share_replica_state,
+                         'status': constants.STATUS_ERROR
+                            if share_replica_state == constants.STATUS_ERROR
+                            else constants.STATUS_AVAILABLE})
             except KeyError as e:
                 LOG.warning('Replica state update returned by driver '
                             '"%(update)s" is invalid. Replica state DB '

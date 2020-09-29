@@ -158,6 +158,7 @@ class HostState(object):
         self.group_replication_type = None
         self.group_replication_domain = None
         self.max_group_replicas_count_on_same_backend = None
+        self.local_group_replication_support = None
 
     def update_capabilities(self, capabilities=None, service=None):
         # Read-only capability dicts
@@ -357,6 +358,10 @@ class HostState(object):
             pool_cap['max_group_replicas_count_on_same_backend'] = (
                 self.max_group_replicas_count_on_same_backend)
 
+        if 'local_group_replication_support' not in pool_cap:
+            pool_cap['local_group_replication_support'] = (
+                self.local_group_replication_support)
+
     def update_backend(self, capability):
         self.share_backend_name = capability.get('share_backend_name')
         self.vendor_name = capability.get('vendor_name')
@@ -387,6 +392,8 @@ class HostState(object):
         self.max_group_replicas_count_on_same_backend = capability.get(
             'share_group_stats', {}).get(
             'max_group_replicas_count_on_same_backend')
+        self.local_group_replication_support = capability.get(
+            'share_group_stats', {}).get('local_group_replication_support')
 
     def consume_from_share(self, share):
         """Incrementally update host state from an share."""
@@ -489,6 +496,8 @@ class PoolState(HostState):
                 'group_replication_domain')
             self.max_group_replicas_count_on_same_backend = (
                 capability.get('max_group_replicas_count_on_same_backend'))
+            self.local_group_replication_support = (
+                capability.get('local_group_replication_support'))
 
     def update_pools(self, capability):
         # Do nothing, since we don't have pools within pool, yet

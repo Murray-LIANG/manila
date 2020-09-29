@@ -1346,8 +1346,16 @@ class ShareDriver(object):
             consistent_snapshot_support=None,
             group_replication_type=None,
             group_replication_domain=self.group_replication_domain,
-            # None means no limit on group replicas count.
+
+            # NOTE(RyanLiang): It is the count including the active group
+            # replica. None means no limit.
             max_group_replicas_count_on_same_backend=None,
+
+            # NOTE(RyanLiang): The backend storage system where the active
+            # group replica locates will hold one more than the count specified
+            # by max_group_replicas_count_on_same_backend if
+            # local_group_replicas_support is reported as True.
+            local_group_replication_support=True,
         )
         sg_stats = data.get('share_group_stats', {}) if data else {}
         common['share_group_stats'].update(sg_stats)
