@@ -5106,12 +5106,11 @@ class ShareManager(manager.SchedulerDependentManager):
 
         if _is_replica_state_valid(group_replica_state, 'share group replica',
                                    group_replica_id):
-            self.db.share_group_replica_update(
-                context, group_replica_id,
-                {'replica_state': group_replica_state,
-                 'status': constants.STATUS_ERROR
-                    if group_replica_state == constants.STATUS_ERROR
-                    else constants.STATUS_AVAILABLE})
+            update = {'replica_state': group_replica_state}
+            if group_replica_state != constants.STATUS_ERROR:
+                update['status'] = constants.STATUS_AVAILABLE
+            self.db.share_group_replica_update(context, group_replica_id,
+                                               update)
 
         for state_update in (share_replica_states or []):
             try:
@@ -5119,12 +5118,11 @@ class ShareManager(manager.SchedulerDependentManager):
                 share_replica_state = state_update['replica_state']
                 if _is_replica_state_valid(share_replica_state,
                                            'share replica', share_replica_id):
-                    self.db.share_replica_update(
-                        context, share_replica_id,
-                        {'replica_state': share_replica_state,
-                         'status': constants.STATUS_ERROR
-                            if share_replica_state == constants.STATUS_ERROR
-                            else constants.STATUS_AVAILABLE})
+                    update = {'replica_state': share_replica_state}
+                    if share_replica_state != constants.STATUS_ERROR:
+                        update['status'] = constants.STATUS_AVAILABLE
+                    self.db.share_replica_update(context, share_replica_id,
+                                                 update)
             except KeyError as e:
                 LOG.warning('Replica state update returned by driver '
                             '"%(update)s" is invalid. Replica state DB '
