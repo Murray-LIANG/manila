@@ -1171,8 +1171,7 @@ class UnityStorageConnection(driver.StorageConnection):
         # original active replica to these replicas, and then build up
         # replications from the new active replica.
         replicated_systems = {
-            active_client.get_serial_number(): active_nas_server_name,
-            self.client.get_serial_number(): dr_nas_server_name}
+            active_client.get_serial_number(): active_nas_server_name}
         for replica in group_replicas_all:
             if replica['id'] in (active_replica['id'],
                                  group_replica_promoting['id']):

@@ -1416,24 +1416,28 @@ def share_group_snapshot_instance_delete(context,
 
 def share_group_snapshot_instance_update(context,
                                          share_group_snapshot_instance_id,
-                                         values):
+                                         values, with_snapshot_members=False):
     """Updates a share group snapshot instance.
 
     :raises NotFound if share_group_snapshot_instance does not exist.
     """
     return IMPL.share_group_snapshot_instance_update(
-        context, share_group_snapshot_instance_id, values)
+        context, share_group_snapshot_instance_id, values,
+        with_snapshot_members=with_snapshot_members)
 
 
 def share_group_snapshot_instance_get(context,
                                       share_group_snapshot_instance_id,
-                                      with_share_group_snapshot_data=False):
+                                      with_share_group_snapshot_data=False,
+                                      with_snapshot_members=False):
     """Returns a share group snapshot instance with the specified id.
 
     :param share_group_snapshot_instance_id: the share group snapshot instance
         id.
     :param with_share_group_snapshot_data: True to set attributes from the
         share group snapshot.
+    :param with_snapshot_members: True to return share snapshot instances as
+        members of the share group snapshot instance.
 
     :raises NotFound if share_group_snapshot_instance does not exist.
     """
@@ -1443,11 +1447,13 @@ def share_group_snapshot_instance_get(context,
 
 
 def share_group_snapshot_instance_get_all(
-        context, filters=None, with_share_group_snapshot_data=False):
+        context, filters=None, with_share_group_snapshot_data=False,
+        with_snapshot_members=False):
     """Returns all share group snapshot instances."""
     return IMPL.share_group_snapshot_instance_get_all(
         context, filters=filters,
-        with_share_group_snapshot_data=with_share_group_snapshot_data)
+        with_share_group_snapshot_data=with_share_group_snapshot_data,
+        with_snapshot_members=with_snapshot_members)
 
 
 ####################

@@ -1397,6 +1397,7 @@ class ShareGroupSnapshotInstance(BASE, ManilaBase):
     share_group_instance = orm.relationship(
         ShareGroupInstance,
         backref=orm.backref("snapshots", lazy='joined'),
+        lazy='immediate',
         foreign_keys=share_group_instance_id,
         primaryjoin=('and_('
                      'ShareGroupSnapshotInstance.share_group_instance_id'

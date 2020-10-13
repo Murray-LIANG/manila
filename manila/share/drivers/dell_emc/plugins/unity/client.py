@@ -14,6 +14,7 @@
 #    under the License.
 from distutils import version
 import six
+import time
 
 from oslo_log import log
 from oslo_utils import excutils
@@ -126,6 +127,11 @@ class UnityClient(object):
         except storops_ex.UnityResourceNotFoundError:
             LOG.info('Filesystem %s is already removed.', filesystem.name)
 
+    @manila_utils.retry(storops_ex.UnityDeleteResourceInReplicationError,
+                        interval=3, retries=3)
+    def delete_filesystem_wait_replication_deletion(self, filesystem):
+        self.delete_filesystem(filesystem, force_snap_delete=True)
+
     def create_nas_server(self, name, sp, pool, tenant=None):
         try:
             return self.system.create_nas_server(name, sp, pool,
@@ -168,6 +174,11 @@ class UnityClient(object):
                         '%(ex)s. Leave the tenant on the system.',
                         {'tenant': tenant.get_id(),
                          'ex': ex})
+
+    @manila_utils.retry(storops_ex.UnityDeleteResourceInReplicationError,
+                        interval=3, retries=3)
+    def delete_nas_server_wait_replication_deletion(self, name):
+        self.delete_nas_server(name)
 
     @staticmethod
     def create_dns_server(nas_server, domain, dns_ip):
@@ -572,8 +583,9 @@ class UnityClient(object):
             # shares on the dr destination nas server. They will be deleted
             # together with filesystems.
             for fs in (dr_nas_server.filesystems or []):
-                dr_client.delete_filesystem(fs, force_snap_delete=True)
-            dr_client.delete_nas_server(dr_nas_server_name)
+                dr_client.delete_filesystem_wait_replication_deletion(fs)
+            dr_client.delete_nas_server_wait_replication_deletion(
+                dr_nas_server_name)
 
         # Return this information for replication rebuild.
         return {'dr_pool': dr_nas_server.pool,

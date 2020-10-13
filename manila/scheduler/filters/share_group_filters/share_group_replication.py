@@ -92,6 +92,9 @@ class ShareGroupReplicationFilter(base_host.BaseHostFilter):
             # Allow schedule to the active replica's host one more time
             # if the backend supports local replication.
             if host_state.local_group_replication_support:
+                LOG.debug('Local group replication is support on host %s. '
+                          'One more group replica will be scheduled to it.',
+                          host_state.host)
                 existing_replica_hosts.remove(active_group_replica_host)
 
             existing_replica_backends = [
@@ -104,12 +107,11 @@ class ShareGroupReplicationFilter(base_host.BaseHostFilter):
             if existing_count >= max_count_allowed:
                 LOG.debug(
                     'Skipping host %(host)s since it does not support '
-                    'multiple share group replicas on the same backend and '
-                    'the count of existing replicas on its backend '
-                    '%(backend)s is %(count)s.',
-                    {'host': host_state.host,
-                     'backend': host_backend,
-                     'count': existing_count})
+                    'max %(allow)s count of share group replicas on the same '
+                    'backend and the count of existing replicas on its '
+                    'backend %(backend)s is %(count)s.',
+                    {'host': host_state.host, 'allow': max_count_allowed,
+                     'backend': host_backend, 'count': existing_count})
                 return False
 
         return group_replication_type == host_state.group_replication_type

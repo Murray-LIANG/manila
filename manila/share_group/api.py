@@ -540,7 +540,8 @@ class API(base.Base):
             raise exception.InvalidShareGroupSnapshot(reason=msg)
 
         group_snap_instances = self.db.share_group_snapshot_instance_get_all(
-            context, filters={'share_group_snapshot_id': snap_id})
+            context, filters={'share_group_snapshot_id': snap_id},
+            with_snapshot_members=True)
         for group_snap_instance in group_snap_instances:
             self.db.share_group_snapshot_instance_update(
                 context, group_snap_instance['id'],
@@ -607,6 +608,13 @@ class API(base.Base):
                     filters=search_opts, sort_key=sort_key, sort_dir=sort_dir,
                 )
             )
+
+        # To keep compatible with showing members in the detail view.
+        if detailed:
+            for snap in share_group_snapshots:
+                members = self.get_all_share_group_snapshot_members(
+                    context, snap['id'])
+                snap['share_group_snapshot_members'] = members
         return share_group_snapshots
 
     def get_all_share_group_snapshot_members(self, context,

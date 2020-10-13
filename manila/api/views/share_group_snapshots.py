@@ -67,9 +67,8 @@ class ShareGroupSnapshotViewBuilder(common.ViewBuilder):
     def detail(self, request, share_group_snap):
         """Detailed view of a single share group snapshot."""
 
-        share_group_snap_instance = share_group_snap.get('instance', {})
         members = self._format_member_list(
-            share_group_snap_instance.get('share_group_snapshot_members', []))
+            share_group_snap.get('share_group_snapshot_members', []))
 
         share_group_snap_dict = {
             'id': share_group_snap.get('id'),

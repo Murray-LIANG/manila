@@ -1023,8 +1023,8 @@ def _quota_reserve(context, resources, project_quotas, user_or_st_quotas,
                 user_or_st_usages[resource].until_refresh -= 1
                 if user_or_st_usages[resource].until_refresh <= 0:
                     refresh = True
-            elif max_age and (user_or_st_usages[resource].updated_at -
-                              timeutils.utcnow()).seconds >= max_age:
+            elif (timeutils.utcnow() -
+                  user_or_st_usages[resource].updated_at).seconds >= max_age:
                 refresh = True
 
             # OK, refresh the usage
@@ -5483,10 +5483,12 @@ def share_group_snapshot_instance_delete(context,
 @require_context
 def share_group_snapshot_instance_update(context,
                                          share_group_snapshot_instance_id,
-                                         values):
+                                         values,
+                                         with_snapshot_members=False):
     session = get_session()
     share_group_snapshot_instance = share_group_snapshot_instance_get(
-        context, share_group_snapshot_instance_id, session=session)
+        context, share_group_snapshot_instance_id, session=session,
+        with_snapshot_members=with_snapshot_members)
     share_group_snapshot_instance.update(values)
     share_group_snapshot_instance.save(session=session)
     return share_group_snapshot_instance
@@ -5496,15 +5498,21 @@ def share_group_snapshot_instance_update(context,
 def share_group_snapshot_instance_get(context,
                                       share_group_snapshot_instance_id,
                                       session=None,
-                                      with_share_group_snapshot_data=False):
+                                      with_share_group_snapshot_data=False,
+                                      with_snapshot_members=False):
     session = session or get_session()
 
-    result = model_query(
+    query = model_query(
         context, models.ShareGroupSnapshotInstance,
         session=session, project_only=True, read_deleted='no'
     ).filter_by(
         id=share_group_snapshot_instance_id
-    ).first()
+    )
+
+    if with_snapshot_members:
+        query = query.options(joinedload('share_group_snapshot_members'))
+
+    result = query.first()
 
     if not result:
         raise exception.ShareGroupSnapshotInstanceNotFound(
@@ -5521,13 +5529,16 @@ def share_group_snapshot_instance_get(context,
 @require_context
 def share_group_snapshot_instance_get_all(
         context, filters=None, session=None,
-        with_share_group_snapshot_data=False):
+        with_share_group_snapshot_data=False, with_snapshot_members=False):
 
     session = session or get_session()
 
     query = model_query(
         context, models.ShareGroupSnapshotInstance,
         session=session, project_only=True, read_deleted='no')
+
+    if with_snapshot_members:
+        query = query.options(joinedload('share_group_snapshot_members'))
 
     filters = filters or {}
     for name, value in filters.items():
