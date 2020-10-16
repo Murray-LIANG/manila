@@ -482,6 +482,7 @@ class UnityClient(object):
     def enable_replication(self, dr_client, active_nas_server_name,
                            dr_nas_server_name, max_out_of_sync_minutes,
                            dr_pool_name=None, dr_new_ip_addr=None,
+                           replicate_existing_snaps=False,
                            reuse_dr_resources=False):
         """Enables the nas server replication from this client to dr_client.
 
@@ -510,6 +511,7 @@ class UnityClient(object):
             dst_nas_server_name=dr_nas_server_name,
             remote_system=remote_system, dst_sp=dst_sp,
             filesystems=active_filesystems,
+            replicate_existing_snaps=replicate_existing_snaps,
             reuse_dst_resource=reuse_dr_resources,
         )
 
@@ -648,13 +650,15 @@ class UnityClient(object):
         if self.is_unity_version('5.1.0'):
             self.enable_replication(
                 dr_client, new_active_nas_name, dr_nas_server_name,
-                max_out_of_sync_minutes, reuse_dr_resources=True)
+                max_out_of_sync_minutes, replicate_existing_snaps=True,
+                reuse_dr_resources=True)
         else:
             self.enable_replication(
                 dr_client, new_active_nas_name, dr_nas_server_name,
                 max_out_of_sync_minutes,
                 dr_pool_name=dr_resource['dr_pool'].name,
-                dr_new_ip_addr=dr_resource['dr_file_interface'].ip_address)
+                dr_new_ip_addr=dr_resource['dr_file_interface'].ip_address,
+                replicate_existing_snaps=True)
 
     def get_nas_server_and_fs_replications(self, dr_client,
                                            active_nas_server_name,

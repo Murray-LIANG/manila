@@ -13,7 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 """Unity backend for the EMC Manila driver."""
-import itertools
+import collections
 import random
 
 from oslo_config import cfg
@@ -1092,7 +1092,7 @@ class UnityStorageConnection(driver.StorageConnection):
         nas_rep, fs_reps = active_client.enable_replication(
             self.client, active_nas_server_name, dr_nas_server_name,
             self.replication_rpo, dr_pool_name=dr_pool_name,
-            dr_new_ip_addr=dr_new_ip_addr)
+            dr_new_ip_addr=dr_new_ip_addr, replicate_existing_snaps=True)
 
         group_replica_update = {
             'replica_state':
@@ -1294,17 +1294,18 @@ class UnityStorageConnection(driver.StorageConnection):
             self.client.get_remote_system(_client.get_serial_number())
             for _, _client in dr_info.values()]
 
-        share_rep_snaps_by_share_rep_id = dict(
-            itertools.groupby(share_replica_snapshots,
-                              key=lambda r: r['share_instance_id']))
+        share_rep_snaps_by_rep_id = collections.defaultdict(list)
+        for snap in share_replica_snapshots:
+            share_rep_snaps_by_rep_id[snap['share_instance_id']].append(snap)
+
         share_rep_snaps_update = []
 
         local_replicated_snaps = []
         # Create share snapshots on Unity for active share replicas and
         # replicate these new snapshots to destination Unity.
         for active_share_rep in active_share_reps:
-            for share_rep_snap in (
-                    share_rep_snaps_by_share_rep_id[active_share_rep['id']]):
+            active_rep_id = active_share_rep['id']
+            for share_rep_snap in share_rep_snaps_by_rep_id[active_rep_id]:
                 # Only one snapshot for each share replica actually.
 
                 active_snap = self.create_snapshot(
@@ -1317,10 +1318,6 @@ class UnityStorageConnection(driver.StorageConnection):
                 active_share_snap_update.update(active_snap)
                 share_rep_snaps_update.append(active_share_snap_update)
 
-                # TODO(RyanLIANG): delete the trace info.
-                LOG.info('share_rep_snaps_update only active: %s',
-                         share_rep_snaps_update)
-
                 LOG.debug('Collecting provider_location for dr share replicas '
                           'snapshots.')
 
@@ -1331,7 +1328,7 @@ class UnityStorageConnection(driver.StorageConnection):
                         and r['share_id'] == active_share_rep['share_id']][0]
 
                     for share_rep_snap in (
-                            share_rep_snaps_by_share_rep_id[dr_shr_rep['id']]):
+                            share_rep_snaps_by_rep_id[dr_shr_rep['id']]):
 
                         # Local replication is a special case here. Snapshot
                         # xxx is replicated to snapshot xxx_20200907020101 for
@@ -1391,15 +1388,15 @@ class UnityStorageConnection(driver.StorageConnection):
             raise exception.InvalidInput(
                 reason='No active replica in the share group replicas.')
 
-        share_rep_snaps_by_share_rep_id = dict(
-            itertools.groupby(share_replica_snapshots,
-                              key=lambda r: r['share_instance_id']))
+        share_rep_snaps_by_rep_id = collections.defaultdict(list)
+        for snap in share_replica_snapshots:
+            share_rep_snaps_by_rep_id[snap['share_instance_id']].append(snap)
 
         for group_rep in group_replicas_all:
             unity_client = self._setup_replica_client(group_rep)
             for share_rep in [r for r in share_replicas_all if
                               r['share_group_instance_id'] == group_rep['id']]:
-                for share_rep_snap in share_rep_snaps_by_share_rep_id.get(
+                for share_rep_snap in share_rep_snaps_by_rep_id.get(
                         share_rep['id'], []):
                     _delete_snapshot_on_system(unity_client, share_rep_snap)
 
@@ -1428,6 +1425,7 @@ class UnityStorageConnection(driver.StorageConnection):
         share_rep_snaps_update = []
         updating_client = self._setup_replica_client(group_replica)
         is_local_rep = active_client.is_local_replication(updating_client)
+        active_group_rep_id = active_group_rep['id']
         for share_rep_snap in share_replica_snaps_updating:
             if share_rep_snap.get('status') == const.STATUS_DELETING:
                 # We don't check whether the snapshot is deleted from Unity.
@@ -1441,8 +1439,15 @@ class UnityStorageConnection(driver.StorageConnection):
                 if share_rep_snap.get('status') == const.STATUS_CREATING:
                     update['status'] = const.STATUS_AVAILABLE
                 if not share_rep_snap.get('provider_location'):
+                    active_rep = [
+                        r for r in share_replicas_all
+                        if r['share_group_instance_id'] == active_group_rep_id
+                        and r['share_id'] == share_rep_snap['share_id']][0]
+                    active_rep_snap = [
+                        s for s in share_replica_snaps_all
+                        if s['share_instance_id'] == active_rep['id']][0]
                     unity_snap = updating_client.get_replicated_snapshot(
-                        share_rep_snap['id'], is_local_rep)
+                        active_rep_snap['provider_location'], is_local_rep)
                     update['provider_location'] = unity_snap.name
                 share_rep_snaps_update.append(update)
 

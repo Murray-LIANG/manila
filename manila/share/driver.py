@@ -18,7 +18,7 @@ Drivers for shares.
 
 """
 
-import itertools
+import collections
 import six
 import time
 
@@ -2052,11 +2052,13 @@ class ShareDriver(object):
             LOG.info('No share in share group to create replica.')
             return None, None
 
-        share_replicas_by_share_id = dict(itertools.groupby(
-            share_replicas_all, key=lambda r: r['share_id']))
-        replica_snaps_by_replica_id = dict(itertools.groupby(
-            share_replica_snapshots,
-            key=lambda s: s['share_replica_snapshot']['share_instance_id']))
+        share_replicas_by_share_id = collections.defaultdict(list)
+        for replica in share_replicas_all:
+            share_replicas_by_share_id[replica['share_id']].append(replica)
+        replica_snaps_by_replica_id = collections.defaultdict(list)
+        for snap in share_replica_snapshots:
+            replica_id = snap['share_replica_snapshot']['share_instance_id']
+            replica_snaps_by_replica_id[replica_id].append(snap)
 
         share_replicas_done = []
         share_replicas_update = []
@@ -2289,10 +2291,12 @@ class ShareDriver(object):
         LOG.debug('Deleting share group replica %s.',
                   group_replica_deleting['id'])
 
-        share_replicas_by_share_id = dict(itertools.groupby(
-            share_replicas_all, key=lambda r: r['share_id']))
-        replica_snaps_by_replica_id = dict(itertools.groupby(
-            share_replica_snapshots, key=lambda s: s['share_instance_id']))
+        share_replicas_by_share_id = collections.defaultdict(list)
+        for replica in share_replicas_all:
+            share_replicas_by_share_id[replica['share_id']].append(replica)
+        replica_snaps_by_replica_id = collections.defaultdict(list)
+        for snap in share_replica_snapshots:
+            replica_snaps_by_replica_id[snap['share_instance_id']].append(snap)
 
         for replica in share_replicas_deleting:
             share_replicas = list(
@@ -2542,8 +2546,9 @@ class ShareDriver(object):
                      'to active.')
             return None, None
 
-        share_replicas_by_share_id = dict(itertools.groupby(
-            share_replicas_all, key=lambda r: r['share_id']))
+        share_replicas_by_share_id = collections.defaultdict(list)
+        for replica in share_replicas_all:
+            share_replicas_by_share_id[replica['share_id']].append(replica)
         share_replicas_update = []
         for share_replica in share_replicas_promoting:
             share_replicas = list(
@@ -2860,11 +2865,13 @@ class ShareDriver(object):
             LOG.info('No share replica in share group replica to be updated.')
             return None, None
 
-        share_replicas_by_share_id = dict(itertools.groupby(
-            share_replicas_all, key=lambda r: r['share_id']))
-        replica_snaps_by_replica_id = dict(itertools.groupby(
-            share_replica_snapshots,
-            key=lambda s: s['share_replica_snapshot']['share_instance_id']))
+        share_replicas_by_share_id = collections.defaultdict(list)
+        for replica in share_replicas_all:
+            share_replicas_by_share_id[replica['share_id']].append(replica)
+        replica_snaps_by_replica_id = collections.defaultdict(list)
+        for snap in share_replica_snapshots:
+            replica_id = snap['share_replica_snapshot']['share_instance_id']
+            replica_snaps_by_replica_id[replica_id].append(snap)
         share_replicas_update = []
         latest_share_replica_states = []
         for share_replica in share_replicas_updating:
@@ -3068,8 +3075,10 @@ class ShareDriver(object):
         share_snaps_done = []
         share_snaps_update = []
 
-        for share_id, share_replicas in itertools.groupby(
-                share_replicas_all, key=lambda x: x['share_id']):
+        share_replicas_by_share_id = collections.defaultdict(list)
+        for replica in share_replicas_all:
+            share_replicas_by_share_id[replica['share_id']].append(replica)
+        for share_id, share_replicas in share_replicas_by_share_id.items():
 
             share_replica_ids = [r['id'] for r in share_replicas]
             share_replica_snaps = [
@@ -3262,8 +3271,10 @@ class ShareDriver(object):
                   'of share group %s.',
                   share_group_id)
 
-        for share_id, share_replicas in itertools.groupby(
-                share_replicas_all, key=lambda x: x['share_id']):
+        share_replicas_by_share_id = collections.defaultdict(list)
+        for replica in share_replicas_all:
+            share_replicas_by_share_id[replica['share_id']].append(replica)
+        for share_id, share_replicas in share_replicas_by_share_id.items():
 
             share_replica_ids = [r['id'] for r in share_replicas]
             share_replica_snaps = [
@@ -3531,9 +3542,11 @@ class ShareDriver(object):
                   {'snap': group_replica_snap_updating['id'],
                    'replica': group_replica['id']})
 
+        share_replicas_by_share_id = collections.defaultdict(list)
+        for replica in share_replicas_all:
+            share_replicas_by_share_id[replica['share_id']].append(replica)
         share_snaps_update = []
-        for share_id, share_reps in itertools.groupby(
-                share_replicas_all, key=lambda x: x['share_id']):
+        for share_id, share_reps in share_replicas_by_share_id.items():
 
             share_rep = [r for r in share_replicas
                          if r['share_id'] == share_id][0]
