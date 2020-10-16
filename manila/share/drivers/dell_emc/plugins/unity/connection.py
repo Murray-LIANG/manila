@@ -512,7 +512,7 @@ class UnityStorageConnection(driver.StorageConnection):
                             '%(new)s. This snapshot is copied from snap '
                             '%(from)s. Ignoring `replicated_to` parameter.',
                             {'new': snapshot_name,
-                             'from':backend_share.snap.get_id()})
+                             'from': backend_share.snap.get_id()})
             self.client.create_snap_of_snap(backend_share.snap, snapshot_name)
         else:
             self.client.create_snapshot(backend_share.filesystem,
@@ -1037,6 +1037,7 @@ class UnityStorageConnection(driver.StorageConnection):
             share_replicas_update.append(update)
         return share_replicas_update
 
+    @enas_utils.log_enter_exit
     def create_share_group_replica(self, context,
                                    group_replica_creating, group_replicas_all,
                                    share_replicas_creating,
@@ -1104,6 +1105,7 @@ class UnityStorageConnection(driver.StorageConnection):
             with_export_locations=True, with_access_rules_status=True)
         return group_replica_update, share_replicas_update
 
+    @enas_utils.log_enter_exit
     def delete_share_group_replica(self, context,
                                    group_replica_deleting, group_replicas_all,
                                    share_replicas_deleting,
@@ -1125,6 +1127,7 @@ class UnityStorageConnection(driver.StorageConnection):
                                           dr_nas_server_name)
         return None, None
 
+    @enas_utils.log_enter_exit
     def promote_share_group_replica(self, context,
                                     group_replica_promoting,
                                     group_replicas_all,
@@ -1226,6 +1229,7 @@ class UnityStorageConnection(driver.StorageConnection):
                   'replica_state': const.REPLICA_STATE_IN_SYNC}],
                 share_replicas_update)
 
+    @enas_utils.log_enter_exit
     def update_share_group_replica_state(self, context,
                                          group_replica_updating,
                                          group_replicas_all,
@@ -1262,6 +1266,7 @@ class UnityStorageConnection(driver.StorageConnection):
             with_export_locations=False, with_access_rules_status=False)
         return group_replica_update, share_replicas_states
 
+    @enas_utils.log_enter_exit
     def create_replicated_share_group_snapshot(self, context,
                                                group_replicas_all,
                                                group_replica_snapshots,
@@ -1286,24 +1291,62 @@ class UnityStorageConnection(driver.StorageConnection):
         dr_info = {r['id']: (r, self._setup_replica_client(r))
                    for r in dr_group_reps}
         remote_systems = [
-            self.client.get_remote_system(rep_and_cli[1].get_serial_number())
-            for rep_and_cli in dr_info.values()]
+            self.client.get_remote_system(_client.get_serial_number())
+            for _, _client in dr_info.values()]
 
         share_rep_snaps_by_share_rep_id = dict(
             itertools.groupby(share_replica_snapshots,
                               key=lambda r: r['share_instance_id']))
         share_rep_snaps_update = []
 
+        local_replicated_snaps = []
         # Create share snapshots on Unity for active share replicas and
         # replicate these new snapshots to destination Unity.
         for active_share_rep in active_share_reps:
             for share_rep_snap in (
                     share_rep_snaps_by_share_rep_id[active_share_rep['id']]):
                 # Only one snapshot for each share replica actually.
-                update = self.create_snapshot(context, share_rep_snap,
-                                              replicated_to=remote_systems)
-                update['id'] = share_rep_snap['id']
-                share_rep_snaps_update.append(update)
+
+                active_snap = self.create_snapshot(
+                    context, share_rep_snap, replicated_to=remote_systems)
+
+                # provider_location for snapshot is returned by
+                # `create_snapshot`, we need to return it to manager to update
+                # snapshot's DB.
+                active_share_snap_update = {'id': share_rep_snap['id']}
+                active_share_snap_update.update(active_snap)
+                share_rep_snaps_update.append(active_share_snap_update)
+
+                # TODO(RyanLIANG): delete the trace info.
+                LOG.info('share_rep_snaps_update only active: %s',
+                         share_rep_snaps_update)
+
+                LOG.debug('Collecting provider_location for dr share replicas '
+                          'snapshots.')
+
+                for dr_group_rep_id, (_, dr_client) in dr_info.items():
+                    dr_shr_rep = [
+                        r for r in share_replicas_all
+                        if r['share_group_instance_id'] == dr_group_rep_id
+                        and r['share_id'] == active_share_rep['share_id']][0]
+
+                    for share_rep_snap in (
+                            share_rep_snaps_by_share_rep_id[dr_shr_rep['id']]):
+
+                        # Local replication is a special case here. Snapshot
+                        # xxx is replicated to snapshot xxx_20200907020101 for
+                        # local replication. To get the correct name
+                        # xxx_20200907020101 we need to sync the replication
+                        # session and then try to get the replicated snapshot.
+                        if self.client.is_local_replication(dr_client):
+                            local_replicated_snaps.append(
+                                (share_rep_snap['id'],
+                                 active_snap['provider_location'],
+                                 dr_client))
+                        else:
+                            dr_share_snap_update = {'id': share_rep_snap['id']}
+                            dr_share_snap_update.update(active_snap)
+                            share_rep_snaps_update.append(dr_share_snap_update)
 
         # Sync all the replication sessions to refresh snapshots on the
         # destination system. Or the snapshots cannot be found on the
@@ -1315,28 +1358,15 @@ class UnityStorageConnection(driver.StorageConnection):
                 dr_group_rep['share_server_id'])
             nas_rep.sync()
 
-        for dr_group_rep_id, (_, dr_client) in dr_info.items():
-            # The reason not merging this loop into the above one is to give
-            # the snapshot some time to appear on the destination system. It
-            # could be useless when there is only one `dr_client`.
-
-            dr_share_replicas = [
-                r for r in share_replicas_all
-                if r['share_group_instance_id'] == dr_group_rep_id]
-
-            is_local_rep = self.client.is_local_replication(dr_client)
-
-            for dr_share_rep in dr_share_replicas:
-                for share_rep_snap in (
-                        share_rep_snaps_by_share_rep_id[dr_share_rep['id']]):
-                    unity_snap = dr_client.get_replicated_snapshot(
-                        share_rep_snap['id'], is_local_rep)
-                    share_rep_snaps_update.append(
-                        {'id': share_rep_snap['id'],
-                         'provider_location': unity_snap.name})
+        for share_rep_snap_id, snap_name, dr_client in local_replicated_snaps:
+            unity_snap = dr_client.get_replicated_snapshot(snap_name, True)
+            share_rep_snaps_update.append(
+                {'id': share_rep_snap_id,
+                 'provider_location': unity_snap.name})
 
         return None, share_rep_snaps_update
 
+    @enas_utils.log_enter_exit
     def delete_replicated_share_group_snapshot(self, context,
                                                group_replicas_all,
                                                group_replica_snapshots,
@@ -1369,10 +1399,11 @@ class UnityStorageConnection(driver.StorageConnection):
             unity_client = self._setup_replica_client(group_rep)
             for share_rep in [r for r in share_replicas_all if
                               r['share_group_instance_id'] == group_rep['id']]:
-                for share_rep_snap in (
-                        share_rep_snaps_by_share_rep_id[share_rep['id']]):
+                for share_rep_snap in share_rep_snaps_by_share_rep_id.get(
+                        share_rep['id'], []):
                     _delete_snapshot_on_system(unity_client, share_rep_snap)
 
+    @enas_utils.log_enter_exit
     def update_replicated_share_group_snapshot(self, context,
                                                group_replica,
                                                group_replicas_all,

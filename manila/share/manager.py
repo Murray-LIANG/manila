@@ -5178,7 +5178,8 @@ class ShareManager(manager.SchedulerDependentManager):
                 context, share_group_id, with_share_group_data=True,
                 with_share_server=True, with_replica_members=True))
 
-        group_snap = self.db.share_group_snapshot_get(share_group_snapshot_id)
+        group_snap = self.db.share_group_snapshot_get(context,
+                                                      share_group_snapshot_id)
         group_replica_snaps = self.db.share_group_snapshot_instance_get_all(
             context,
             filters=dict(share_group_snapshot_id=group_snap['id']),
@@ -5196,7 +5197,11 @@ class ShareManager(manager.SchedulerDependentManager):
         for group_snap in group_replica_snaps:
             share_snaps = group_snap.get('share_group_snapshot_members', [])
             share_replica_snaps.extend(
-                [self._get_snapshot_instance_dict(context, s)
+                [self._get_snapshot_instance_dict(
+                    context,
+                    # Re-get from DB with share data populated.
+                    self.db.share_snapshot_instance_get(context, s['id'],
+                                                        with_share_data=True))
                  for s in share_snaps])
 
         share_server = self._get_share_server(context,
@@ -5251,7 +5256,8 @@ class ShareManager(manager.SchedulerDependentManager):
                 context, share_group_id, with_share_group_data=True,
                 with_share_server=True, with_replica_members=True))
 
-        group_snap = self.db.share_group_snapshot_get(share_group_snapshot_id)
+        group_snap = self.db.share_group_snapshot_get(context,
+                                                      share_group_snapshot_id)
         group_replica_snaps = self.db.share_group_snapshot_instance_get_all(
             context,
             filters=dict(share_group_snapshot_id=group_snap['id']),
@@ -5337,6 +5343,7 @@ class ShareManager(manager.SchedulerDependentManager):
                 with_share_server=True, with_replica_members=True))
 
         group_snap = self.db.share_group_snapshot_get(
+            context,
             group_replica_snapshot['share_group_snapshot_id'])
         group_replica_snaps = self.db.share_group_snapshot_instance_get_all(
             context,
@@ -5495,6 +5502,8 @@ class ShareManager(manager.SchedulerDependentManager):
             'source_share_group_snapshot_member_id': share_instance.get(
                 'source_share_group_snapshot_member_id'),
             'availability_zone': share_instance.get('availability_zone'),
+            'share_group_instance_id': share_instance.get(
+                'share_group_instance_id'),
         }
         if share_instance_ref['share_server']:
             share_instance_ref['share_server'] = self._get_share_server_dict(

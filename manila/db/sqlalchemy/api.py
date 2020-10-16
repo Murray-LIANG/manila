@@ -5469,7 +5469,7 @@ def share_group_snapshot_instance_delete(context,
 
         session.query(models.ShareSnapshotInstance).filter_by(
             share_group_snapshot_instance_id=share_group_snapshot_instance_id
-        ).soft_delete()
+        ).soft_delete(update_status=True)
 
         group_snapshot = _share_group_snapshot_get(
             context,
@@ -5477,7 +5477,7 @@ def share_group_snapshot_instance_delete(context,
             session=session,
         )
         if len(group_snapshot.instances) == 0:
-            group_snapshot.soft_delete(session=session)
+            group_snapshot.soft_delete(session=session, update_status=True)
 
 
 @require_context
