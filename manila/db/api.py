@@ -1211,21 +1211,20 @@ def share_group_instance_get(context, share_group_instance_id,
 
 
 def share_group_instance_get_all(context, filters=None, sort_key=None,
-                                 sort_dir=None):
+                                 sort_dir=None, with_share_group_data=False):
     """Returns all share group instances."""
-    return IMPL.share_group_instance_get_all(context, filters=filters,
-                                             sort_key=sort_key,
-                                             sort_dir=sort_dir)
+    return IMPL.share_group_instance_get_all(
+        context, filters=filters, sort_key=sort_key, sort_dir=sort_dir,
+        with_share_group_data=with_share_group_data)
 
 
 def share_group_instance_get_all_in_all_tenants(context, filters=None,
-                                                sort_key=None, sort_dir=None):
+                                                sort_key=None, sort_dir=None,
+                                                with_share_group_data=False):
     """Returns all share group instances."""
-    return IMPL.share_group_instance_get_all_in_all_tenants(context,
-                                                            filters=filters,
-                                                            sort_key=sort_key,
-                                                            sort_dir=sort_dir)
-
+    return IMPL.share_group_instance_get_all_in_all_tenants(
+        context, filters=filters, sort_key=sort_key, sort_dir=sort_dir,
+        with_share_group_data = with_share_group_data)
 
 def share_group_instance_create(context, share_group_id, values):
     """Creates a share group instance."""
@@ -1443,17 +1442,30 @@ def share_group_snapshot_instance_get(context,
     """
     return IMPL.share_group_snapshot_instance_get(
         context, share_group_snapshot_instance_id,
-        with_share_group_snapshot_data=with_share_group_snapshot_data)
+        with_share_group_snapshot_data=with_share_group_snapshot_data,
+        with_snapshot_members=with_snapshot_members)
 
 
 def share_group_snapshot_instance_get_all(
         context, filters=None, with_share_group_snapshot_data=False,
-        with_snapshot_members=False):
+        with_snapshot_members=False, sort_key=None, sort_dir=None):
     """Returns all share group snapshot instances."""
     return IMPL.share_group_snapshot_instance_get_all(
         context, filters=filters,
         with_share_group_snapshot_data=with_share_group_snapshot_data,
-        with_snapshot_members=with_snapshot_members)
+        with_snapshot_members=with_snapshot_members, sort_key=sort_key,
+        sort_dir=sort_dir)
+
+
+def share_group_snapshot_instance_get_all_in_all_tenants(
+        context, filters=None, with_share_group_snapshot_data=False,
+        with_snapshot_members=False, sort_key=None, sort_dir=None):
+    """Returns all share group snapshot instances."""
+    return IMPL.share_group_snapshot_instance_get_all_in_all_tenants(
+        context, filters=filters,
+        with_share_group_snapshot_data=with_share_group_snapshot_data,
+        with_snapshot_members=with_snapshot_members, sort_key=sort_key,
+        sort_dir=sort_dir)
 
 
 ####################

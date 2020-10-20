@@ -4815,8 +4815,6 @@ def _share_group_instance_get_all_with_filters(context, all_tenants=False,
                                                sort_key=None, sort_dir=None,
                                                session=None):
     session = session or get_session()
-    sort_key = sort_key or 'created_at'
-    sort_dir = sort_dir or 'desc'
     query = model_query(context, models.ShareGroupInstance,
                         session=session, read_deleted='no')
     if with_share_group_type:
@@ -4843,6 +4841,8 @@ def _share_group_instance_get_all_with_filters(context, all_tenants=False,
                                                 'be filtered by "%s".' % name)
         query = query.filter(attr == value)
 
+    sort_key = sort_key or 'created_at'
+    sort_dir = sort_dir or 'desc'
     try:
         query = apply_sorting(models.ShareGroupInstance, query, sort_key,
                               sort_dir)
@@ -4884,20 +4884,23 @@ def share_group_instance_get(context, share_group_instance_id,
 @require_admin_context
 def share_group_instance_get_all_in_all_tenants(context, filters=None,
                                                 sort_key=None,
-                                                sort_dir=None, session=None):
+                                                sort_dir=None, session=None,
+                                                with_share_group_data=False):
     return _share_group_instance_get_all_with_filters(
         context, all_tenants=True, filters=filters, sort_key=sort_key,
         sort_dir=sort_dir, session=session,
+        with_share_group_data=with_share_group_data
     )
 
 
 @require_context
 def share_group_instance_get_all(context, filters=None,
                                  sort_key=None, sort_dir=None,
-                                 session=None):
+                                 session=None, with_share_group_data=False):
     return _share_group_instance_get_all_with_filters(
         context, all_tenants=False, filters=filters, sort_key=sort_key,
         sort_dir=sort_dir, session=session,
+        with_share_group_data=with_share_group_data
     )
 
 
@@ -5526,16 +5529,16 @@ def share_group_snapshot_instance_get(context,
     return result
 
 
-@require_context
-def share_group_snapshot_instance_get_all(
-        context, filters=None, session=None,
-        with_share_group_snapshot_data=False, with_snapshot_members=False):
+def _share_group_snapshot_instance_get_all(
+        context, all_tenants=False, filters=None, session=None,
+        with_share_group_snapshot_data=False, with_snapshot_members=False,
+        sort_key=None, sort_dir=None):
 
     session = session or get_session()
 
     query = model_query(
         context, models.ShareGroupSnapshotInstance,
-        session=session, project_only=True, read_deleted='no')
+        session=session, project_only=not all_tenants, read_deleted='no')
 
     if with_snapshot_members:
         query = query.options(joinedload('share_group_snapshot_members'))
@@ -5549,6 +5552,19 @@ def share_group_snapshot_instance_get_all(
                        '"%s".' % name)
         query = query.filter(attr == value)
 
+    sort_key = sort_key or 'created_at'
+    sort_dir = sort_dir or 'desc'
+    try:
+        query = apply_sorting(models.ShareGroupSnapshotInstance, query,
+                              sort_key, sort_dir)
+    except AttributeError:
+        raise exception.InvalidInput(
+            reason='Wrong sorting key provided - "%s".' % sort_key)
+
+    if 'limit' in filters:
+        offset = filters.get('offset', 0)
+        query = query.limit(filters['limit']).offset(offset)
+
     group_snap_instances = query.all()
 
     if with_share_group_snapshot_data:
@@ -5560,6 +5576,30 @@ def share_group_snapshot_instance_get_all(
                 share_group_snapshot)
 
     return group_snap_instances
+
+
+@require_context
+def share_group_snapshot_instance_get_all(
+        context, filters=None, session=None,
+        with_share_group_snapshot_data=False, with_snapshot_members=False,
+        sort_key=None, sort_dir=None):
+    return _share_group_snapshot_instance_get_all(
+        context, filters=filters, session=session,
+        with_share_group_snapshot_data=with_share_group_snapshot_data,
+        with_snapshot_members=with_snapshot_members, sort_key=sort_key,
+        sort_dir=sort_dir)
+
+
+@require_admin_context
+def share_group_snapshot_instance_get_all_in_all_tenants(
+        context, filters=None, session=None,
+        with_share_group_snapshot_data=False, with_snapshot_members=False,
+        sort_key=None, sort_dir=None):
+    return _share_group_snapshot_instance_get_all(
+        context, all_tenants=True, filters=filters, session=session,
+        with_share_group_snapshot_data=with_share_group_snapshot_data,
+        with_snapshot_members=with_snapshot_members, sort_key=sort_key,
+        sort_dir=sort_dir)
 
 
 ####################

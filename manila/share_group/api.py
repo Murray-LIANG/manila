@@ -411,6 +411,29 @@ class API(base.Base):
 
         return share_groups
 
+    def get_share_group_snapshot_instance(self, context,
+                                          snapshot_instance_id):
+        return self.db.share_group_snapshot_instance_get(
+            context, snapshot_instance_id, with_share_group_snapshot_data=True)
+
+    def get_all_share_group_snapshot_instances(self, context, filters=None,
+                                               sort_key=None, sort_dir=None):
+        all_tenants = filters.pop('all_tenants', False)
+        if all_tenants:
+            db_get = (
+                self.db.share_group_snapshot_instance_get_all_in_all_tenants)
+        else:
+            db_get = self.db.share_group_snapshot_instance_get_all
+
+        share_group_snapshot_id = filters.get('share_group_snapshot_id')
+        if share_group_snapshot_id:
+            LOG.debug('Searching for share group snapshot instances of group '
+                      'snapshot: %s', share_group_snapshot_id)
+        else:
+            LOG.debug('Searching for all share group snapshot instances.')
+        return db_get(context, filters=filters, sort_key=sort_key,
+                      sort_dir=sort_dir, with_share_group_snapshot_data=True)
+
     def _db_share_group_snapshot_member_create(self, context,
                                                share, share_instance,
                                                group_snap_instance):
@@ -622,6 +645,72 @@ class API(base.Base):
         members = self.db.share_group_snapshot_members_get_all(
             context, share_group_snapshot_id)
         return members
+
+    def get_share_group_instance(self, context, group_instance_id):
+        return self.db.share_group_instance_get(
+            context, group_instance_id, with_share_group_data=True)
+
+    def get_all_share_group_instances(self, context, filters=None,
+                                      sort_key=None, sort_dir=None):
+        all_tenants = filters.pop('all_tenants', False)
+        if all_tenants:
+            db_get = self.db.share_group_instance_get_all_in_all_tenants
+        else:
+            db_get = self.db.share_group_instance_get_all
+
+        share_group_id = filters.get('share_group_id')
+        if share_group_id:
+            LOG.debug('Searching for share group instances of group: %s',
+                      share_group_id)
+        else:
+            LOG.debug('Searching for all share group instances.')
+        return db_get(context, filters=filters, sort_key=sort_key,
+                      sort_dir=sort_dir, with_share_group_data=True)
+
+    def delete_share_group_instance(self, context, group_replica):
+        """Deletes the share group replica."""
+        # Disallow deletion of ONLY active replica, *even* when this
+        # operation is forced.
+        group_replicas = self.db.share_group_replica_get_all_by_share_group(
+            context, group_replica['share_group_id'])
+        active_replicas = list(filter(
+            lambda x: x['replica_state'] == constants.REPLICA_STATE_ACTIVE,
+            group_replicas))
+        if (group_replica.get('replica_state') ==
+                constants.REPLICA_STATE_ACTIVE and len(active_replicas) == 1):
+            msg = _('Cannot delete last active replica.')
+            raise exception.ShareGroupReplicationException(reason=msg)
+
+        group_replica_id = group_replica['id']
+        LOG.info('Deleting share group replica %s.', group_replica_id)
+
+        self.db.share_group_replica_update(
+            context, group_replica_id, {'status': constants.STATUS_DELETING})
+
+        for share_replica in group_replica.get(
+                'share_group_replica_members', []):
+            self.db.share_replica_update(context, share_replica['id'],
+                                         {'status': constants.STATUS_DELETING})
+
+        if not group_replica['host']:
+            group_snap_instances = (
+                self.db.share_group_snapshot_instance_get_all(
+                    context,
+                    filters={'share_group_instance_id': group_replica_id}))
+            for group_snap_instance in group_snap_instances:
+                self.db.share_group_snapshot_instance_delete(
+                    context, group_snap_instance['id'])
+
+            # TODO(RyanLiang): handle individual snapshots of shares in the
+            # group, or disable the creation of share snapshot if the share is
+            # in a group, let the user create share group snapshot instead.
+
+            # Delete the group replica from the database.
+            self.db.share_group_replica_delete(context, group_replica_id)
+        else:
+
+            self.share_rpcapi.delete_share_group_replica(context,
+                                                         group_replica)
 
     def get_share_group_replica(self, context, group_replica_id,
                                 with_replica_members=False):

@@ -37,8 +37,10 @@ from manila.api.v2 import services
 from manila.api.v2 import share_access_metadata
 from manila.api.v2 import share_accesses
 from manila.api.v2 import share_export_locations
+from manila.api.v2 import share_group_instances
 from manila.api.v2 import share_group_replicas
 from manila.api.v2 import share_group_snapshots
+from manila.api.v2 import share_group_snapshot_instances
 from manila.api.v2 import share_group_type_specs
 from manila.api.v2 import share_group_types
 from manila.api.v2 import share_groups
@@ -444,6 +446,15 @@ class APIRouter(manila.api.openstack.APIRouter):
             action="action",
             conditions={"method": ["POST"]})
 
+        self.resources['share-group-snapshot-instances'] = (
+            share_group_snapshot_instances.create_resource())
+        mapper.resource(
+            "share-group-snapshot-instance",
+            "share-group-snapshot-instances",
+            controller=self.resources["share-group-snapshot-instances"],
+            collection={"detail": "GET"},
+            member={"action": "POST"})
+
         self.resources['share-replicas'] = share_replicas.create_resource()
         mapper.resource("share-replica", "share-replicas",
                         controller=self.resources['share-replicas'],
@@ -501,3 +512,12 @@ class APIRouter(manila.api.openstack.APIRouter):
             controller=self.resources["share-group-replicas"],
             collection={"detail": "GET"},
             member={"members": "GET", "action": "POST"})
+
+        self.resources['share-group-instances'] = (
+            share_group_instances.create_resource())
+        mapper.resource(
+            "share-group-instance",
+            "share-group-instances",
+            controller=self.resources["share-group-instances"],
+            collection={"detail": "GET"},
+            member={"action": "POST"})
