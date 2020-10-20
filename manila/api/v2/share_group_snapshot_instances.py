@@ -45,7 +45,7 @@ class ShareGroupSnapshotInstanceController(wsgi.Controller,
     def _get_share_group_snapshot_instance(self, context,
                                            group_snapshot_instance_id):
         try:
-            return self.share_group_api.get_share_group_instance(
+            return self.share_group_api.get_share_group_snapshot_instance(
                 context, group_snapshot_instance_id)
         except exception.NotFound:
             msg = _('Share group snapshot instance %s not found.'
