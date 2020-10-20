@@ -28,8 +28,10 @@ from manila.policies import share_access
 from manila.policies import share_access_metadata
 from manila.policies import share_export_location
 from manila.policies import share_group
+from manila.policies import share_group_instance
 from manila.policies import share_group_replica
 from manila.policies import share_group_snapshot
+from manila.policies import share_group_snapshot_instance
 from manila.policies import share_group_type
 from manila.policies import share_group_types_spec
 from manila.policies import share_instance
@@ -68,7 +70,9 @@ def list_rules():
         share_group_types_spec.list_rules(),
         share_group_type.list_rules(),
         share_group_snapshot.list_rules(),
+        share_group_snapshot_instance.list_rules(),
         share_group.list_rules(),
+        share_group_instance.list_rules(),
         share_group_replica.list_rules(),
         share_replica.list_rules(),
         share_replica_export_location.list_rules(),
